@@ -3,8 +3,7 @@ from six import viewkeys
 from . import _inputstream
 from . import _tokenizer
 
-from . import treebuilders
-from .treebuilders.base import Marker
+from .treebuilder import Marker, getTreeBuilder
 
 from . import _utils
 from .constants import (
@@ -38,7 +37,7 @@ def parse(doc, treebuilder="etree", namespaceHTMLElements=True, **kwargs):
     <Element u'{http://www.w3.org/1999/xhtml}html' at 0x7feac4909db0>
 
     """
-    tb = treebuilders.getTreeBuilder(treebuilder)
+    tb = getTreeBuilder(treebuilder)
     p = HTMLParser(tb, namespaceHTMLElements=namespaceHTMLElements)
     return p.parse(doc, **kwargs)
 
@@ -53,8 +52,8 @@ class HTMLParser(object):
     def __init__(self, tree=None, strict=False, namespaceHTMLElements=True, debug=False):
         """
         :arg tree: a treebuilder class controlling the type of tree that will be
-            returned. Built in treebuilders can be accessed through
-            html5lib.treebuilders.getTreeBuilder(treeType)
+            returned. Built in treebuilder can be accessed through
+            html5lib.treebuilder.getTreeBuilder(treeType)
 
         :arg strict: raise an exception when a parse error is encountered
 
@@ -75,9 +74,9 @@ class HTMLParser(object):
         self.debug = debug
 
         if tree is None:
-            tree = treebuilders.getTreeBuilder("etree")
+            tree = getTreeBuilder("etree")
         elif isinstance(tree, str):
-            tree = treebuilders.getTreeBuilder(tree)
+            tree = getTreeBuilder(tree)
 
         self.tree = tree(namespaceHTMLElements)
         self.errors = []

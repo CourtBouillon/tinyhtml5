@@ -15,7 +15,7 @@ For convenience, this module re-exports the following names:
 * :func:`~.html5parser.parse`
 * :func:`~.html5parser.parseFragment`
 * :class:`~.html5parser.HTMLParser`
-* :func:`~.treebuilders.getTreeBuilder`
+* :func:`~.treebuilder.getTreeBuilder`
 * :func:`~.treewalkers.getTreeWalker`
 * :func:`~.serializer.serialize`
 """
