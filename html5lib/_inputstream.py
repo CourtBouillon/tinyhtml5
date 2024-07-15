@@ -5,6 +5,7 @@ from io import BytesIO, StringIO
 from urllib.response import addbase
 
 import webencodings
+from chardet.universaldetector import UniversalDetector
 
 from .constants import EOF, spaceCharacters, asciiLetters, asciiUppercase
 from .constants import _ReparseException
@@ -380,7 +381,7 @@ class HTMLBinaryInputStream(HTMLUnicodeInputStream):
 
     def __init__(self, source, override_encoding=None, transport_encoding=None,
                  same_origin_parent_encoding=None, likely_encoding=None,
-                 default_encoding="windows-1252", useChardet=True):
+                 default_encoding="windows-1252"):
         """Initialises the HTMLInputStream.
 
         HTMLInputStream(source, [encoding]) -> Normalized stream from source
@@ -414,7 +415,7 @@ class HTMLBinaryInputStream(HTMLUnicodeInputStream):
         self.default_encoding = default_encoding
 
         # Determine encoding
-        self.charEncoding = self.determineEncoding(useChardet)
+        self.charEncoding = self.determineEncoding()
         assert self.charEncoding[0] is not None
 
         # Call superclass
@@ -443,7 +444,7 @@ class HTMLBinaryInputStream(HTMLUnicodeInputStream):
 
         return stream
 
-    def determineEncoding(self, chardet=True):
+    def determineEncoding(self):
         # BOMs take precedence over everything
         # This will also read past the BOM if present
         charEncoding = self.detectBOM(), "certain"
@@ -475,27 +476,21 @@ class HTMLBinaryInputStream(HTMLUnicodeInputStream):
         if charEncoding[0] is not None:
             return charEncoding
 
-        # Guess with chardet, if available
-        if chardet:
-            try:
-                from chardet.universaldetector import UniversalDetector
-            except ImportError:
-                pass
-            else:
-                buffers = []
-                detector = UniversalDetector()
-                while not detector.done:
-                    buffer = self.rawStream.read(self.numBytesChardet)
-                    assert isinstance(buffer, bytes)
-                    if not buffer:
-                        break
-                    buffers.append(buffer)
-                    detector.feed(buffer)
-                detector.close()
-                encoding = lookupEncoding(detector.result['encoding'])
-                self.rawStream.seek(0)
-                if encoding is not None:
-                    return encoding, "tentative"
+        # Guess with chardet
+        buffers = []
+        detector = UniversalDetector()
+        while not detector.done:
+            buffer = self.rawStream.read(self.numBytesChardet)
+            assert isinstance(buffer, bytes)
+            if not buffer:
+                break
+            buffers.append(buffer)
+            detector.feed(buffer)
+        detector.close()
+        encoding = lookupEncoding(detector.result['encoding'])
+        self.rawStream.seek(0)
+        if encoding is not None:
+            return encoding, "tentative"
 
         # Try the default encoding
         charEncoding = lookupEncoding(self.default_encoding), "tentative"
