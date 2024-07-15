@@ -1,78 +1,9 @@
-"""A collection of modules for building different kinds of trees from HTML
-documents.
+"""Tree builder."""
 
-To create a treebuilder for a new type of tree, you need to do
-implement several things:
-
-1. A set of classes for various types of elements: Document, Doctype, Comment,
-   Element. These must implement the interface of ``treebuilder.Node``
-   (although comment nodes have a different signature for their constructor,
-   see ``treebuilder.Comment``) Textual content may also be implemented
-   as another node type, or not, as your tree implementation requires.
-
-2. A treebuilder object (called ``TreeBuilder`` by convention) that inherits
-   from ``treebuilders.TreeBuilder``. This has 4 required attributes:
-
-   * ``documentClass`` - the class to use for the bottommost node of a document
-   * ``elementClass`` - the class to use for HTML Elements
-   * ``commentClass`` - the class to use for comments
-   * ``doctypeClass`` - the class to use for doctypes
-
-   It also has one required method:
-
-   * ``getDocument`` - Returns the root node of the complete document tree
-
-"""
-
-import re
-import xml.etree.ElementTree as default_etree
+from xml.etree import ElementTree
 from copy import copy
-from types import ModuleType
 
 from .constants import scopingElements, tableInsertModeElements, namespaces
-
-
-treeBuilderCache = {}
-
-
-def getTreeBuilder(treeType, implementation=None, **kwargs):
-    """Get a TreeBuilder class for various types of trees with built-in support
-
-    :arg treeType: the name of the tree type required (case-insensitive). Supported
-        values are:
-
-        * "dom" - A generic builder for DOM implementations, defaulting to a
-          xml.dom.minidom based implementation.
-        * "etree" - A generic builder for tree implementations exposing an
-          ElementTree-like interface, defaulting to xml.etree.cElementTree if
-          available and xml.etree.ElementTree if not.
-        * "lxml" - A etree-based builder for lxml.etree, handling limitations
-          of lxml's implementation.
-
-    :arg implementation: (Currently applies to the "etree" and "dom" tree
-        types). A module implementing the tree type e.g. xml.etree.ElementTree
-        or xml.etree.cElementTree.
-
-    :arg kwargs: Any additional options to pass to the TreeBuilder when
-        creating it.
-
-    Example:
-
-    >>> from html5lib.treebuilder import getTreeBuilder
-    >>> builder = getTreeBuilder('etree')
-
-    """
-
-    treeType = treeType.lower()
-    if treeType not in treeBuilderCache:
-        if treeType == "etree":
-            if implementation is None:
-                implementation = default_etree
-            # NEVER cache here, caching is done in the etree submodule
-            return getETreeModule(implementation, **kwargs).TreeBuilder
-        else:
-            raise ValueError("""Unrecognised treebuilder "%s" """ % treeType)
-    return treeBuilderCache.get(treeType)
 
 
 # The scope markers are inserted when entering object elements,
@@ -92,112 +23,13 @@ listElementsMap = {
 }
 
 
-class Node(object):
-    """Represents an item in the tree"""
-    def __init__(self, name):
-        """Creates a Node
-
-        :arg name: The tag name associated with the node
-
-        """
-        # The tag name associated with the node
-        self.name = name
-        # The parent of the current node (or None for the document node)
-        self.parent = None
-        # The value of the current node (applies to text nodes and comments)
-        self.value = None
-        # A dict holding name -> value pairs for attributes of the node
-        self.attributes = {}
-        # A list of child nodes of the current node. This must include all
-        # elements but not necessarily other node types.
-        self.childNodes = []
-        # A list of miscellaneous flags that can be set on the node.
-        self._flags = []
-
-    def __str__(self):
-        attributesStr = " ".join(["%s=\"%s\"" % (name, value)
-                                  for name, value in
-                                  self.attributes.items()])
-        if attributesStr:
-            return "<%s %s>" % (self.name, attributesStr)
-        else:
-            return "<%s>" % (self.name)
-
-    def __repr__(self):
-        return "<%s>" % (self.name)
-
-    def appendChild(self, node):
-        """Insert node as a child of the current node
-
-        :arg node: the node to insert
-
-        """
-        raise NotImplementedError
-
-    def insertText(self, data, insertBefore=None):
-        """Insert data as text in the current node, positioned before the
-        start of node insertBefore or to the end of the node's text.
-
-        :arg data: the data to insert
-
-        :arg insertBefore: True if you want to insert the text before the node
-            and False if you want to insert it after the node
-
-        """
-        raise NotImplementedError
-
-    def insertBefore(self, node, refNode):
-        """Insert node as a child of the current node, before refNode in the
-        list of child nodes. Raises ValueError if refNode is not a child of
-        the current node
-
-        :arg node: the node to insert
-
-        :arg refNode: the child node to insert the node before
-
-        """
-        raise NotImplementedError
-
-    def removeChild(self, node):
-        """Remove node from the children of the current node
-
-        :arg node: the child node to remove
-
-        """
-        raise NotImplementedError
-
-    def reparentChildren(self, newParent):
-        """Move all the children of the current node to newParent.
-        This is needed so that trees that don't store text as nodes move the
-        text in the correct way
-
-        :arg newParent: the node to move all this node's children to
-
-        """
-        # XXX - should this method be made more general?
-        for child in self.childNodes:
-            newParent.appendChild(child)
-        self.childNodes = []
-
-    def cloneNode(self):
-        """Return a shallow copy of the current node i.e. a node with the same
-        name and attributes but with no parent or child nodes
-        """
-        raise NotImplementedError
-
-    def hasContent(self):
-        """Return true if the node has children or text, false otherwise
-        """
-        raise NotImplementedError
-
-
 class ActiveFormattingElements(list):
     def append(self, node):
         """Append node to the end of the list."""
         equalCount = 0
-        if node != Marker:
+        if node is not Marker:
             for element in self[::-1]:
-                if element == Marker:
+                if element is Marker:
                     break
                 if self.nodesEqual(element, node):
                     equalCount += 1
@@ -216,31 +48,247 @@ class ActiveFormattingElements(list):
         return True
 
 
-class BaseTreeBuilder(object):
-    """Base treebuilder implementation
+class Element:
+    def __init__(self, name, namespace=None):
+        self._name = name
+        self._namespace = namespace
+        self._element = ElementTree.Element(self._getETreeTag(name, namespace))
+        if namespace is None:
+            self.nameTuple = namespaces["html"], self._name
+        else:
+            self.nameTuple = self._namespace, self._name
+        self._childNodes = []
+        self._flags = []
 
-    * documentClass - the class to use for the bottommost node of a document
-    * elementClass - the class to use for HTML Elements
-    * commentClass - the class to use for comments
-    * doctypeClass - the class to use for doctypes
+        # The parent of the current node (or None for the document node)
+        self.parent = None
 
-    """
-    # pylint:disable=not-callable
+    def __str__(self):
+        attributesStr = " ".join(["%s=\"%s\"" % (name, value)
+                                  for name, value in
+                                  self.attributes.items()])
+        if attributesStr:
+            return "<%s %s>" % (self.name, attributesStr)
+        else:
+            return "<%s>" % (self.name)
 
-    # Document class
-    documentClass = None
+    def __repr__(self):
+        return "<%s>" % (self.name)
 
-    # The class to use for creating a node
-    elementClass = None
+    def _getETreeTag(self, name, namespace):
+        if namespace is None:
+            etree_tag = name
+        else:
+            etree_tag = "{%s}%s" % (namespace, name)
+        return etree_tag
 
-    # The class to use for creating comments
-    commentClass = None
+    def _setName(self, name):
+        self._name = name
+        self._element.tag = self._getETreeTag(self._name, self._namespace)
 
-    # The class to use for creating doctypes
-    doctypeClass = None
+    def _getName(self):
+        return self._name
 
-    # Fragment class
-    fragmentClass = None
+    # The tag name associated with the node
+    name = property(_getName, _setName)
+
+    def _setNamespace(self, namespace):
+        self._namespace = namespace
+        self._element.tag = self._getETreeTag(self._name, self._namespace)
+
+    def _getNamespace(self):
+        return self._namespace
+
+    namespace = property(_getNamespace, _setNamespace)
+
+    def _getAttributes(self):
+        return self._element.attrib
+
+    def _setAttributes(self, attributes):
+        el_attrib = self._element.attrib
+        el_attrib.clear()
+        if attributes:
+            # calling .items _always_ allocates, and the above truthy check is cheaper than the
+            # allocation on average
+            for key, value in attributes.items():
+                if isinstance(key, tuple):
+                    name = "{%s}%s" % (key[2], key[1])
+                else:
+                    name = key
+                el_attrib[name] = value
+
+    # A dict holding name -> value pairs for attributes of the node
+    attributes = property(_getAttributes, _setAttributes)
+
+    def _getChildNodes(self):
+        return self._childNodes
+
+    def _setChildNodes(self, value):
+        del self._element[:]
+        self._childNodes = []
+        for element in value:
+            self.insertChild(element)
+
+    # A list of child nodes of the current node. This must include all
+    # elements but not necessarily other node types.
+    childNodes = property(_getChildNodes, _setChildNodes)
+
+    def hasContent(self):
+        """Return true if the node has children or text, false otherwise."""
+        return bool(self._element.text or len(self._element))
+
+    def appendChild(self, node):
+        """Insert node as a child of the current node
+
+        :arg node: the node to insert
+
+        """
+        self._childNodes.append(node)
+        self._element.append(node._element)
+        node.parent = self
+
+    def insertBefore(self, node, refNode):
+        """Insert node as a child of the current node, before refNode in the
+        list of child nodes. Raises ValueError if refNode is not a child of
+        the current node
+
+        :arg node: the node to insert
+
+        :arg refNode: the child node to insert the node before
+
+        """
+        index = list(self._element).index(refNode._element)
+        self._element.insert(index, node._element)
+        node.parent = self
+
+    def removeChild(self, node):
+        """Remove node from the children of the current node
+
+        :arg node: the child node to remove
+
+        """
+        self._childNodes.remove(node)
+        self._element.remove(node._element)
+        node.parent = None
+
+    def insertText(self, data, insertBefore=None):
+        """Insert data as text in the current node, positioned before the
+        start of node insertBefore or to the end of the node's text.
+
+        :arg data: the data to insert
+
+        :arg insertBefore: True if you want to insert the text before the node
+            and False if you want to insert it after the node
+
+        """
+        if not len(self._element):
+            if not self._element.text:
+                self._element.text = ""
+            self._element.text += data
+        elif insertBefore is None:
+            # Insert the text as the tail of the last child element
+            if not self._element[-1].tail:
+                self._element[-1].tail = ""
+            self._element[-1].tail += data
+        else:
+            # Insert the text before the specified node
+            children = list(self._element)
+            index = children.index(insertBefore._element)
+            if index > 0:
+                if not self._element[index - 1].tail:
+                    self._element[index - 1].tail = ""
+                self._element[index - 1].tail += data
+            else:
+                if not self._element.text:
+                    self._element.text = ""
+                self._element.text += data
+
+    def cloneNode(self):
+        """Return a shallow copy of the current node i.e. a node with the same
+        name and attributes but with no parent or child nodes
+        """
+        element = type(self)(self.name, self.namespace)
+        if self._element.attrib:
+            element._element.attrib = copy(self._element.attrib)
+        return element
+
+    def reparentChildren(self, newParent):
+        """Move all the children of the current node to newParent.
+        This is needed so that trees that don't store text as nodes move the
+        text in the correct way
+
+        :arg newParent: the node to move all this node's children to
+
+        """
+        if newParent.childNodes:
+            newParent.childNodes[-1]._element.tail += self._element.text
+        else:
+            if not newParent._element.text:
+                newParent._element.text = ""
+            if self._element.text is not None:
+                newParent._element.text += self._element.text
+        self._element.text = ""
+        for child in self.childNodes:
+            newParent.appendChild(child)
+        self.childNodes = []
+
+
+class Comment(Element):
+    def __init__(self, data):
+        # Use the superclass constructor to set all properties on the
+        # wrapper element
+        self._element = ElementTree.Comment(data)
+        self.parent = None
+        self._childNodes = []
+        self._flags = []
+
+    def _getData(self):
+        return self._element.text
+
+    def _setData(self, value):
+        self._element.text = value
+
+    data = property(_getData, _setData)
+
+
+class DocumentType(Element):
+    def __init__(self, name, publicId, systemId):
+        Element.__init__(self, "<!DOCTYPE>")
+        self._element.text = name
+        self.publicId = publicId
+        self.systemId = systemId
+
+    def _getPublicId(self):
+        return self._element.get("publicId", "")
+
+    def _setPublicId(self, value):
+        if value is not None:
+            self._element.set("publicId", value)
+
+    publicId = property(_getPublicId, _setPublicId)
+
+    def _getSystemId(self):
+        return self._element.get("systemId", "")
+
+    def _setSystemId(self, value):
+        if value is not None:
+            self._element.set("systemId", value)
+
+    systemId = property(_getSystemId, _setSystemId)
+
+
+class Document(Element):
+    def __init__(self):
+        Element.__init__(self, "DOCUMENT_ROOT")
+
+
+class DocumentFragment(Element):
+    def __init__(self):
+        Element.__init__(self, "DOCUMENT_FRAGMENT")
+
+
+class TreeBuilder:
+    """Tree builder."""
 
     def __init__(self, namespaceHTMLElements):
         """Create a TreeBuilder
@@ -264,7 +312,7 @@ class BaseTreeBuilder(object):
 
         self.insertFromTable = False
 
-        self.document = self.documentClass()
+        self.document = Document()
 
     def elementInScope(self, target, variant=None):
 
@@ -300,11 +348,11 @@ class BaseTreeBuilder(object):
         # Step 2 and step 3: we start with the last element. So i is -1.
         i = len(self.activeFormattingElements) - 1
         entry = self.activeFormattingElements[i]
-        if entry == Marker or entry in self.openElements:
+        if entry is Marker or entry in self.openElements:
             return
 
         # Step 6
-        while entry != Marker and entry not in self.openElements:
+        while entry is not Marker and entry not in self.openElements:
             if i == 0:
                 # This will be reset to 0 below
                 i = -1
@@ -336,7 +384,7 @@ class BaseTreeBuilder(object):
 
     def clearActiveFormattingElements(self):
         entry = self.activeFormattingElements.pop()
-        while self.activeFormattingElements and entry != Marker:
+        while self.activeFormattingElements and entry is not Marker:
             entry = self.activeFormattingElements.pop()
 
     def elementInActiveFormattingElements(self, name):
@@ -347,7 +395,7 @@ class BaseTreeBuilder(object):
         for item in self.activeFormattingElements[::-1]:
             # Check for Marker first because if it's a Marker it doesn't have a
             # name attribute.
-            if item == Marker:
+            if item is Marker:
                 break
             elif item.name == name:
                 return item
@@ -363,19 +411,19 @@ class BaseTreeBuilder(object):
         publicId = token["publicId"]
         systemId = token["systemId"]
 
-        doctype = self.doctypeClass(name, publicId, systemId)
+        doctype = DocumentType(name, publicId, systemId)
         self.document.appendChild(doctype)
 
     def insertComment(self, token, parent=None):
         if parent is None:
             parent = self.openElements[-1]
-        parent.appendChild(self.commentClass(token["data"]))
+        parent.appendChild(Comment(token["data"]))
 
     def createElement(self, token):
         """Create an element but don't insert it anywhere"""
         name = token["name"]
         namespace = token.get("namespace", self.defaultNamespace)
-        element = self.elementClass(name, namespace)
+        element = Element(name, namespace)
         element.attributes = token["data"]
         return element
 
@@ -397,7 +445,7 @@ class BaseTreeBuilder(object):
         name = token["name"]
         assert isinstance(name, str), "Element %s not unicode" % name
         namespace = token.get("namespace", self.defaultNamespace)
-        element = self.elementClass(name, namespace)
+        element = Element(name, namespace)
         element.attributes = token["data"]
         self.openElements[-1].appendChild(element)
         self.openElements.append(element)
@@ -472,250 +520,15 @@ class BaseTreeBuilder(object):
 
     def getDocument(self):
         """Return the final tree"""
-        return self.document
+        if self.defaultNamespace is not None:
+            return self.document._element.find(
+                "{%s}html" % self.defaultNamespace)
+        else:
+            return self.document._element.find("html")
 
     def getFragment(self):
         """Return the final fragment"""
         # assert self.innerHTML
-        fragment = self.fragmentClass()
+        fragment = DocumentFragment()
         self.openElements[0].reparentChildren(fragment)
-        return fragment
-
-tag_regexp = re.compile("{([^}]*)}(.*)")
-
-
-def getETreeBuilder(ElementTreeImplementation, fullTree=False):
-    ElementTree = ElementTreeImplementation
-    ElementTreeCommentType = ElementTree.Comment("asd").tag
-
-    class Element(Node):
-        def __init__(self, name, namespace=None):
-            self._name = name
-            self._namespace = namespace
-            self._element = ElementTree.Element(self._getETreeTag(name,
-                                                                  namespace))
-            if namespace is None:
-                self.nameTuple = namespaces["html"], self._name
-            else:
-                self.nameTuple = self._namespace, self._name
-            self.parent = None
-            self._childNodes = []
-            self._flags = []
-
-        def _getETreeTag(self, name, namespace):
-            if namespace is None:
-                etree_tag = name
-            else:
-                etree_tag = "{%s}%s" % (namespace, name)
-            return etree_tag
-
-        def _setName(self, name):
-            self._name = name
-            self._element.tag = self._getETreeTag(self._name, self._namespace)
-
-        def _getName(self):
-            return self._name
-
-        name = property(_getName, _setName)
-
-        def _setNamespace(self, namespace):
-            self._namespace = namespace
-            self._element.tag = self._getETreeTag(self._name, self._namespace)
-
-        def _getNamespace(self):
-            return self._namespace
-
-        namespace = property(_getNamespace, _setNamespace)
-
-        def _getAttributes(self):
-            return self._element.attrib
-
-        def _setAttributes(self, attributes):
-            el_attrib = self._element.attrib
-            el_attrib.clear()
-            if attributes:
-                # calling .items _always_ allocates, and the above truthy check is cheaper than the
-                # allocation on average
-                for key, value in attributes.items():
-                    if isinstance(key, tuple):
-                        name = "{%s}%s" % (key[2], key[1])
-                    else:
-                        name = key
-                    el_attrib[name] = value
-
-        attributes = property(_getAttributes, _setAttributes)
-
-        def _getChildNodes(self):
-            return self._childNodes
-
-        def _setChildNodes(self, value):
-            del self._element[:]
-            self._childNodes = []
-            for element in value:
-                self.insertChild(element)
-
-        childNodes = property(_getChildNodes, _setChildNodes)
-
-        def hasContent(self):
-            """Return true if the node has children or text"""
-            return bool(self._element.text or len(self._element))
-
-        def appendChild(self, node):
-            self._childNodes.append(node)
-            self._element.append(node._element)
-            node.parent = self
-
-        def insertBefore(self, node, refNode):
-            index = list(self._element).index(refNode._element)
-            self._element.insert(index, node._element)
-            node.parent = self
-
-        def removeChild(self, node):
-            self._childNodes.remove(node)
-            self._element.remove(node._element)
-            node.parent = None
-
-        def insertText(self, data, insertBefore=None):
-            if not len(self._element):
-                if not self._element.text:
-                    self._element.text = ""
-                self._element.text += data
-            elif insertBefore is None:
-                # Insert the text as the tail of the last child element
-                if not self._element[-1].tail:
-                    self._element[-1].tail = ""
-                self._element[-1].tail += data
-            else:
-                # Insert the text before the specified node
-                children = list(self._element)
-                index = children.index(insertBefore._element)
-                if index > 0:
-                    if not self._element[index - 1].tail:
-                        self._element[index - 1].tail = ""
-                    self._element[index - 1].tail += data
-                else:
-                    if not self._element.text:
-                        self._element.text = ""
-                    self._element.text += data
-
-        def cloneNode(self):
-            element = type(self)(self.name, self.namespace)
-            if self._element.attrib:
-                element._element.attrib = copy(self._element.attrib)
-            return element
-
-        def reparentChildren(self, newParent):
-            if newParent.childNodes:
-                newParent.childNodes[-1]._element.tail += self._element.text
-            else:
-                if not newParent._element.text:
-                    newParent._element.text = ""
-                if self._element.text is not None:
-                    newParent._element.text += self._element.text
-            self._element.text = ""
-            Node.reparentChildren(self, newParent)
-
-    class Comment(Element):
-        def __init__(self, data):
-            # Use the superclass constructor to set all properties on the
-            # wrapper element
-            self._element = ElementTree.Comment(data)
-            self.parent = None
-            self._childNodes = []
-            self._flags = []
-
-        def _getData(self):
-            return self._element.text
-
-        def _setData(self, value):
-            self._element.text = value
-
-        data = property(_getData, _setData)
-
-    class DocumentType(Element):
-        def __init__(self, name, publicId, systemId):
-            Element.__init__(self, "<!DOCTYPE>")
-            self._element.text = name
-            self.publicId = publicId
-            self.systemId = systemId
-
-        def _getPublicId(self):
-            return self._element.get("publicId", "")
-
-        def _setPublicId(self, value):
-            if value is not None:
-                self._element.set("publicId", value)
-
-        publicId = property(_getPublicId, _setPublicId)
-
-        def _getSystemId(self):
-            return self._element.get("systemId", "")
-
-        def _setSystemId(self, value):
-            if value is not None:
-                self._element.set("systemId", value)
-
-        systemId = property(_getSystemId, _setSystemId)
-
-    class Document(Element):
-        def __init__(self):
-            Element.__init__(self, "DOCUMENT_ROOT")
-
-    class DocumentFragment(Element):
-        def __init__(self):
-            Element.__init__(self, "DOCUMENT_FRAGMENT")
-
-    class TreeBuilder(BaseTreeBuilder):  # pylint:disable=unused-variable
-        documentClass = Document
-        doctypeClass = DocumentType
-        elementClass = Element
-        commentClass = Comment
-        fragmentClass = DocumentFragment
-        implementation = ElementTreeImplementation
-
-        def getDocument(self):
-            if fullTree:
-                return self.document._element
-            else:
-                if self.defaultNamespace is not None:
-                    return self.document._element.find(
-                        "{%s}html" % self.defaultNamespace)
-                else:
-                    return self.document._element.find("html")
-
-        def getFragment(self):
-            return TreeBuilder.getFragment(self)._element
-
-    return locals()
-
-
-def moduleFactoryFactory(factory):
-    moduleCache = {}
-
-    def moduleFactory(baseModule, *args, **kwargs):
-        if isinstance(ModuleType.__name__, type("")):
-            name = "_%s_factory" % baseModule.__name__
-        else:
-            name = b"_%s_factory" % baseModule.__name__
-
-        kwargs_tuple = tuple(kwargs.items())
-
-        try:
-            return moduleCache[name][args][kwargs_tuple]
-        except KeyError:
-            mod = ModuleType(name)
-            objs = factory(baseModule, *args, **kwargs)
-            mod.__dict__.update(objs)
-            if "name" not in moduleCache:
-                moduleCache[name] = {}
-            if "args" not in moduleCache[name]:
-                moduleCache[name][args] = {}
-            if "kwargs" not in moduleCache[name][args]:
-                moduleCache[name][args][kwargs_tuple] = {}
-            moduleCache[name][args][kwargs_tuple] = mod
-            return mod
-
-    return moduleFactory
-
-
-getETreeModule = moduleFactoryFactory(getETreeBuilder)
+        return fragment._element

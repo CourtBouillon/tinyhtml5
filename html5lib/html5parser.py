@@ -3,7 +3,7 @@ from collections.abc import Mapping
 from . import _inputstream
 from . import _tokenizer
 
-from .treebuilder import Marker, getTreeBuilder
+from .treebuilder import Marker, TreeBuilder
 
 from .constants import (
     spaceCharacters, asciiUpper2Lower,
@@ -18,12 +18,10 @@ from .constants import (
 )
 
 
-def parse(doc, treebuilder="etree", namespaceHTMLElements=True, **kwargs):
+def parse(doc, namespaceHTMLElements=True, **kwargs):
     """Parse an HTML document as a string or file-like object into a tree
 
     :arg doc: the document to parse as a string or file-like object
-
-    :arg treebuilder: the treebuilder to use when parsing
 
     :arg namespaceHTMLElements: whether or not to namespace HTML elements
 
@@ -36,9 +34,8 @@ def parse(doc, treebuilder="etree", namespaceHTMLElements=True, **kwargs):
     <Element u'{http://www.w3.org/1999/xhtml}html' at 0x7feac4909db0>
 
     """
-    tb = getTreeBuilder(treebuilder)
-    p = HTMLParser(tb, namespaceHTMLElements=namespaceHTMLElements)
-    return p.parse(doc, **kwargs)
+    parser = HTMLParser(namespaceHTMLElements=namespaceHTMLElements)
+    return parser.parse(doc, **kwargs)
 
 
 class HTMLParser(object):
@@ -48,7 +45,7 @@ class HTMLParser(object):
 
     """
 
-    def __init__(self, tree=None, strict=False, namespaceHTMLElements=True, debug=False):
+    def __init__(self, strict=False, namespaceHTMLElements=True, debug=False):
         """
         :arg tree: a treebuilder class controlling the type of tree that will be
             returned. Built in treebuilder can be accessed through
@@ -72,12 +69,7 @@ class HTMLParser(object):
         self.strict = strict
         self.debug = debug
 
-        if tree is None:
-            tree = getTreeBuilder("etree")
-        elif isinstance(tree, str):
-            tree = getTreeBuilder(tree)
-
-        self.tree = tree(namespaceHTMLElements)
+        self.tree = TreeBuilder(namespaceHTMLElements)
         self.errors = []
 
         self.phases = {name: cls(self, self.tree) for name, cls in
