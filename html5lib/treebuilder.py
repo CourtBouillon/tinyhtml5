@@ -22,11 +22,6 @@ implement several things:
 
    * ``getDocument`` - Returns the root node of the complete document tree
 
-3. If you wish to run the unit tests, you must also create a ``testSerializer``
-   method on your treebuilder which accepts a node and returns a string
-   containing Node and its children serialized according to the format used in
-   the unittests
-
 """
 
 import re
@@ -34,8 +29,7 @@ import xml.etree.ElementTree as default_etree
 from copy import copy
 from types import ModuleType
 
-from .constants import scopingElements, tableInsertModeElements, namespaces, prefixes
-from . import _ihatexml
+from .constants import scopingElements, tableInsertModeElements, namespaces
 
 
 treeBuilderCache = {}
@@ -487,14 +481,6 @@ class BaseTreeBuilder(object):
         self.openElements[0].reparentChildren(fragment)
         return fragment
 
-    def testSerializer(self, node):
-        """Serialize the subtree of node in the format required by unit tests
-
-        :arg node: the node from which to start serializing
-
-        """
-        raise NotImplementedError
-
 tag_regexp = re.compile("{([^}]*)}(.*)")
 
 
@@ -679,122 +665,6 @@ def getETreeBuilder(ElementTreeImplementation, fullTree=False):
         def __init__(self):
             Element.__init__(self, "DOCUMENT_FRAGMENT")
 
-    def testSerializer(element):
-        rv = []
-
-        def serializeElement(element, indent=0):
-            if not hasattr(element, "tag"):
-                element = element.getroot()
-            if element.tag == "<!DOCTYPE>":
-                if element.get("publicId") or element.get("systemId"):
-                    publicId = element.get("publicId") or ""
-                    systemId = element.get("systemId") or ""
-                    rv.append("""<!DOCTYPE %s "%s" "%s">""" %
-                              (element.text, publicId, systemId))
-                else:
-                    rv.append("<!DOCTYPE %s>" % (element.text,))
-            elif element.tag == "DOCUMENT_ROOT":
-                rv.append("#document")
-                if element.text is not None:
-                    rv.append("|%s\"%s\"" % (' ' * (indent + 2), element.text))
-                if element.tail is not None:
-                    raise TypeError("Document node cannot have tail")
-                if hasattr(element, "attrib") and len(element.attrib):
-                    raise TypeError("Document node cannot have attributes")
-            elif element.tag == ElementTreeCommentType:
-                rv.append("|%s<!-- %s -->" % (' ' * indent, element.text))
-            else:
-                assert isinstance(element.tag, str), \
-                    "Expected unicode, got %s, %s" % (type(element.tag), element.tag)
-                nsmatch = tag_regexp.match(element.tag)
-
-                if nsmatch is None:
-                    name = element.tag
-                else:
-                    ns, name = nsmatch.groups()
-                    prefix = prefixes[ns]
-                    name = "%s %s" % (prefix, name)
-                rv.append("|%s<%s>" % (' ' * indent, name))
-
-                if hasattr(element, "attrib"):
-                    attributes = []
-                    for name, value in element.attrib.items():
-                        nsmatch = tag_regexp.match(name)
-                        if nsmatch is not None:
-                            ns, name = nsmatch.groups()
-                            prefix = prefixes[ns]
-                            attr_string = "%s %s" % (prefix, name)
-                        else:
-                            attr_string = name
-                        attributes.append((attr_string, value))
-
-                    for name, value in sorted(attributes):
-                        rv.append('|%s%s="%s"' % (' ' * (indent + 2), name, value))
-                if element.text:
-                    rv.append("|%s\"%s\"" % (' ' * (indent + 2), element.text))
-            indent += 2
-            for child in element:
-                serializeElement(child, indent)
-            if element.tail:
-                rv.append("|%s\"%s\"" % (' ' * (indent - 2), element.tail))
-        serializeElement(element, 0)
-
-        return "\n".join(rv)
-
-    def tostring(element):  # pylint:disable=unused-variable
-        """Serialize an element and its child nodes to a string"""
-        rv = []
-        filter = _ihatexml.InfosetFilter()
-
-        def serializeElement(element):
-            if isinstance(element, ElementTree.ElementTree):
-                element = element.getroot()
-
-            if element.tag == "<!DOCTYPE>":
-                if element.get("publicId") or element.get("systemId"):
-                    publicId = element.get("publicId") or ""
-                    systemId = element.get("systemId") or ""
-                    rv.append("""<!DOCTYPE %s PUBLIC "%s" "%s">""" %
-                              (element.text, publicId, systemId))
-                else:
-                    rv.append("<!DOCTYPE %s>" % (element.text,))
-            elif element.tag == "DOCUMENT_ROOT":
-                if element.text is not None:
-                    rv.append(element.text)
-                if element.tail is not None:
-                    raise TypeError("Document node cannot have tail")
-                if hasattr(element, "attrib") and len(element.attrib):
-                    raise TypeError("Document node cannot have attributes")
-
-                for child in element:
-                    serializeElement(child)
-
-            elif element.tag == ElementTreeCommentType:
-                rv.append("<!--%s-->" % (element.text,))
-            else:
-                # This is assumed to be an ordinary element
-                if not element.attrib:
-                    rv.append("<%s>" % (filter.fromXmlName(element.tag),))
-                else:
-                    attr = " ".join(["%s=\"%s\"" % (
-                        filter.fromXmlName(name), value)
-                        for name, value in element.attrib.items()])
-                    rv.append("<%s %s>" % (element.tag, attr))
-                if element.text:
-                    rv.append(element.text)
-
-                for child in element:
-                    serializeElement(child)
-
-                rv.append("</%s>" % (element.tag,))
-
-            if element.tail:
-                rv.append(element.tail)
-
-        serializeElement(element)
-
-        return "".join(rv)
-
     class TreeBuilder(BaseTreeBuilder):  # pylint:disable=unused-variable
         documentClass = Document
         doctypeClass = DocumentType
@@ -802,9 +672,6 @@ def getETreeBuilder(ElementTreeImplementation, fullTree=False):
         commentClass = Comment
         fragmentClass = DocumentFragment
         implementation = ElementTreeImplementation
-
-        def testSerializer(self, element):
-            return testSerializer(element)
 
         def getDocument(self):
             if fullTree:
