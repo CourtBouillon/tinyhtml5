@@ -34,8 +34,6 @@ import xml.etree.ElementTree as default_etree
 from copy import copy
 from types import ModuleType
 
-from six import text_type
-
 from .constants import scopingElements, tableInsertModeElements, namespaces, prefixes
 from . import _ihatexml
 
@@ -280,7 +278,7 @@ class BaseTreeBuilder(object):
         # match any node with that name
         exactNode = hasattr(target, "nameTuple")
         if not exactNode:
-            if isinstance(target, text_type):
+            if isinstance(target, str):
                 target = (namespaces["html"], target)
             assert isinstance(target, tuple)
 
@@ -403,7 +401,7 @@ class BaseTreeBuilder(object):
 
     def insertElementNormal(self, token):
         name = token["name"]
-        assert isinstance(name, text_type), "Element %s not unicode" % name
+        assert isinstance(name, str), "Element %s not unicode" % name
         namespace = token.get("namespace", self.defaultNamespace)
         element = self.elementClass(name, namespace)
         element.attributes = token["data"]
@@ -706,7 +704,7 @@ def getETreeBuilder(ElementTreeImplementation, fullTree=False):
             elif element.tag == ElementTreeCommentType:
                 rv.append("|%s<!-- %s -->" % (' ' * indent, element.text))
             else:
-                assert isinstance(element.tag, text_type), \
+                assert isinstance(element.tag, str), \
                     "Expected unicode, got %s, %s" % (type(element.tag), element.tag)
                 nsmatch = tag_regexp.match(element.tag)
 

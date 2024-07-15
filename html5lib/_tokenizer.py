@@ -1,7 +1,3 @@
-from __future__ import absolute_import, division, unicode_literals
-
-from six import text_type, unichr as chr
-
 from bisect import bisect_left
 from collections import deque, OrderedDict
 from collections.abc import Mapping
@@ -53,7 +49,7 @@ class ABCTrie(Mapping):
 
 class Trie(ABCTrie):
     def __init__(self, data):
-        if not all(isinstance(x, text_type) for x in data.keys()):
+        if not all(isinstance(x, str) for x in data.keys()):
             raise TypeError("All keys must be strings")
 
         self._data = data

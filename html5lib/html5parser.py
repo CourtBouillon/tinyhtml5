@@ -1,7 +1,5 @@
 from collections.abc import Mapping
 
-from six import viewkeys
-
 from . import _inputstream
 from . import _tokenizer
 
@@ -433,9 +431,8 @@ class Phase(object):
     def processStartTag(self, token):
         # Note the caching is done here rather than BoundMethodDispatcher as doing it there
         # requires a circular reference to the Phase, and this ends up with a significant
-        # (CPython 2.7, 3.8) GC cost when parsing many short inputs
+        # (CPython 3.8) GC cost when parsing many short inputs
         name = token["name"]
-        # In Py2, using `in` is quicker in general than try/except KeyError
         # In Py3, `in` is quicker when there are few cache hits (typically short inputs)
         if name in self.__startTagCache:
             func = self.__startTagCache[name]
@@ -460,9 +457,8 @@ class Phase(object):
     def processEndTag(self, token):
         # Note the caching is done here rather than BoundMethodDispatcher as doing it there
         # requires a circular reference to the Phase, and this ends up with a significant
-        # (CPython 2.7, 3.8) GC cost when parsing many short inputs
+        # (CPython 3.8) GC cost when parsing many short inputs
         name = token["name"]
-        # In Py2, using `in` is quicker in general than try/except KeyError
         # In Py3, `in` is quicker when there are few cache hits (typically short inputs)
         if name in self.__endTagCache:
             func = self.__endTagCache[name]
@@ -2779,7 +2775,7 @@ _phases = {
 
 
 def adjust_attributes(token, replacements):
-    needs_adjustment = viewkeys(token['data']) & viewkeys(replacements)
+    needs_adjustment = token['data'].keys() & replacements.keys()
     if needs_adjustment:
         token['data'] = type(token['data'])((replacements.get(k, k), v)
                                             for k, v in token['data'].items())
