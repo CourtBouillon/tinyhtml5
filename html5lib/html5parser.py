@@ -1,4 +1,3 @@
-from __future__ import absolute_import, division, unicode_literals
 from six import viewkeys
 
 from . import _inputstream
@@ -42,31 +41,6 @@ def parse(doc, treebuilder="etree", namespaceHTMLElements=True, **kwargs):
     tb = treebuilders.getTreeBuilder(treebuilder)
     p = HTMLParser(tb, namespaceHTMLElements=namespaceHTMLElements)
     return p.parse(doc, **kwargs)
-
-
-def parseFragment(doc, container="div", treebuilder="etree", namespaceHTMLElements=True, **kwargs):
-    """Parse an HTML fragment as a string or file-like object into a tree
-
-    :arg doc: the fragment to parse as a string or file-like object
-
-    :arg container: the container context to parse the fragment in
-
-    :arg treebuilder: the treebuilder to use when parsing
-
-    :arg namespaceHTMLElements: whether or not to namespace HTML elements
-
-    :returns: parsed tree
-
-    Example:
-
-    >>> from html5lib.html5libparser import parseFragment
-    >>> parseFragment('<b>this is a fragment</b>')
-    <Element u'DOCUMENT_FRAGMENT' at 0x7feac484b090>
-
-    """
-    tb = treebuilders.getTreeBuilder(treebuilder)
-    p = HTMLParser(tb, namespaceHTMLElements=namespaceHTMLElements)
-    return p.parseFragment(doc, container=container, **kwargs)
 
 
 class HTMLParser(object):
@@ -287,34 +261,6 @@ class HTMLParser(object):
         """
         self._parse(stream, False, None, *args, **kwargs)
         return self.tree.getDocument()
-
-    def parseFragment(self, stream, *args, **kwargs):
-        """Parse a HTML fragment into a well-formed tree fragment
-
-        :arg container: name of the element we're setting the innerHTML
-            property if set to None, default to 'div'
-
-        :arg stream: a file-like object or string containing the HTML to be parsed
-
-            The optional encoding parameter must be a string that indicates
-            the encoding.  If specified, that encoding will be used,
-            regardless of any BOM or later declaration (such as in a meta
-            element)
-
-        :arg scripting: treat noscript elements as if JavaScript was turned on
-
-        :returns: parsed tree
-
-        Example:
-
-        >>> from html5lib.html5libparser import HTMLParser
-        >>> parser = HTMLParser()
-        >>> parser.parseFragment('<b>this is a fragment</b>')
-        <Element u'DOCUMENT_FRAGMENT' at 0x7feac484b090>
-
-        """
-        self._parse(stream, True, *args, **kwargs)
-        return self.tree.getFragment()
 
     def parseError(self, errorcode="XXX-undefined-error", datavars=None):
         # XXX The idea is to make errorcode mandatory.

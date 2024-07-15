@@ -20,15 +20,9 @@ For convenience, this module re-exports the following names:
 * :func:`~.serializer.serialize`
 """
 
-from __future__ import absolute_import, division, unicode_literals
+from .html5parser import parse
 
-from .html5parser import HTMLParser, parse, parseFragment
-from .treebuilders import getTreeBuilder
-from .treewalkers import getTreeWalker
-from .serializer import serialize
-
-__all__ = ["HTMLParser", "parse", "parseFragment", "getTreeBuilder",
-           "getTreeWalker", "serialize"]
+__all__ = ["parse"]
 
 # this has to be at the top level, see how setup.py parses this
 #: Distribution version number.
