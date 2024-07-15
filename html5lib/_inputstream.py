@@ -11,7 +11,6 @@ import webencodings
 
 from .constants import EOF, spaceCharacters, asciiLetters, asciiUppercase
 from .constants import _ReparseException
-from . import _utils
 
 # Non-unicode versions of constants for use in the pre-parser
 spaceCharactersBytes = frozenset([item.encode("ascii") for item in spaceCharacters])
@@ -22,17 +21,14 @@ spacesAngleBrackets = spaceCharactersBytes | frozenset([b">", b"<"])
 
 invalid_unicode_no_surrogate = "[\u0001-\u0008\u000B\u000E-\u001F\u007F-\u009F\uFDD0-\uFDEF\uFFFE\uFFFF\U0001FFFE\U0001FFFF\U0002FFFE\U0002FFFF\U0003FFFE\U0003FFFF\U0004FFFE\U0004FFFF\U0005FFFE\U0005FFFF\U0006FFFE\U0006FFFF\U0007FFFE\U0007FFFF\U0008FFFE\U0008FFFF\U0009FFFE\U0009FFFF\U000AFFFE\U000AFFFF\U000BFFFE\U000BFFFF\U000CFFFE\U000CFFFF\U000DFFFE\U000DFFFF\U000EFFFE\U000EFFFF\U000FFFFE\U000FFFFF\U0010FFFE\U0010FFFF]"  # noqa
 
-if _utils.supports_lone_surrogates:
-    # Use one extra step of indirection and create surrogates with
-    # eval. Not using this indirection would introduce an illegal
-    # unicode literal on platforms not supporting such lone
-    # surrogates.
-    assert invalid_unicode_no_surrogate[-1] == "]" and invalid_unicode_no_surrogate.count("]") == 1
-    invalid_unicode_re = re.compile(invalid_unicode_no_surrogate[:-1] +
-                                    eval('"\\uD800-\\uDFFF"') +  # pylint:disable=eval-used
-                                    "]")
-else:
-    invalid_unicode_re = re.compile(invalid_unicode_no_surrogate)
+# Use one extra step of indirection and create surrogates with
+# eval. Not using this indirection would introduce an illegal
+# unicode literal on platforms not supporting such lone
+# surrogates.
+assert invalid_unicode_no_surrogate[-1] == "]" and invalid_unicode_no_surrogate.count("]") == 1
+invalid_unicode_re = re.compile(invalid_unicode_no_surrogate[:-1] +
+                                eval('"\\uD800-\\uDFFF"') +  # pylint:disable=eval-used
+                                "]")
 
 non_bmp_invalid_codepoints = {0x1FFFE, 0x1FFFF, 0x2FFFE, 0x2FFFF, 0x3FFFE,
                               0x3FFFF, 0x4FFFE, 0x4FFFF, 0x5FFFE, 0x5FFFF,
@@ -170,11 +166,7 @@ class HTMLUnicodeInputStream(object):
 
         """
 
-        if not _utils.supports_lone_surrogates:
-            # Such platforms will have already checked for such
-            # surrogate errors, so no need to do this checking.
-            self.reportCharacterErrors = None
-        elif len("\U0010FFFF") == 1:
+        if len("\U0010FFFF") == 1:
             self.reportCharacterErrors = self.characterErrorsUCS4
         else:
             self.reportCharacterErrors = self.characterErrorsUCS2
@@ -298,9 +290,15 @@ class HTMLUnicodeInputStream(object):
             codepoint = ord(match.group())
             pos = match.start()
             # Pretty sure there should be endianness issues here
-            if _utils.isSurrogatePair(data[pos:pos + 2]):
+            is_surrogate_pair = (
+                len(data[pos:pos + 2]) == 2 and
+                0xDBFF >= ord(data[pos]) >= 0xD800 and
+                0xDFFF >= ord(data[pos+1]) >= 0xDC00)
+            if is_surrogate_pair:
                 # We have a surrogate pair!
-                char_val = _utils.surrogatePairToCodepoint(data[pos:pos + 2])
+                char_val = (
+                    0x10000 + (ord(data[pos]) - 0xD800) * 0x400 +
+                    (ord(data[pos+1]) - 0xDC00))
                 if char_val in non_bmp_invalid_codepoints:
                     self.errors.append("invalid-codepoint")
                 skip = True

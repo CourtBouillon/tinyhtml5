@@ -30,12 +30,13 @@ implement several things:
 """
 
 import re
+import xml.etree.ElementTree as default_etree
 from copy import copy
+from types import ModuleType
 
 from six import text_type
 
 from .constants import scopingElements, tableInsertModeElements, namespaces, prefixes
-from ._utils import default_etree, moduleFactoryFactory
 from . import _ihatexml
 
 
@@ -821,6 +822,35 @@ def getETreeBuilder(ElementTreeImplementation, fullTree=False):
             return TreeBuilder.getFragment(self)._element
 
     return locals()
+
+
+def moduleFactoryFactory(factory):
+    moduleCache = {}
+
+    def moduleFactory(baseModule, *args, **kwargs):
+        if isinstance(ModuleType.__name__, type("")):
+            name = "_%s_factory" % baseModule.__name__
+        else:
+            name = b"_%s_factory" % baseModule.__name__
+
+        kwargs_tuple = tuple(kwargs.items())
+
+        try:
+            return moduleCache[name][args][kwargs_tuple]
+        except KeyError:
+            mod = ModuleType(name)
+            objs = factory(baseModule, *args, **kwargs)
+            mod.__dict__.update(objs)
+            if "name" not in moduleCache:
+                moduleCache[name] = {}
+            if "args" not in moduleCache[name]:
+                moduleCache[name][args] = {}
+            if "kwargs" not in moduleCache[name][args]:
+                moduleCache[name][args][kwargs_tuple] = {}
+            moduleCache[name][args][kwargs_tuple] = mod
+            return mod
+
+    return moduleFactory
 
 
 getETreeModule = moduleFactoryFactory(getETreeBuilder)
