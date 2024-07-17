@@ -2949,10 +2949,5 @@ prefixes = {v: k for k, v in namespaces.items()}
 prefixes["http://www.w3.org/1998/Math/MathML"] = "math"
 
 
-class DataLossWarning(UserWarning):
-    """Raised when the current tree is unable to represent the input data"""
-    pass
-
-
 class _ReparseException(Exception):
     pass

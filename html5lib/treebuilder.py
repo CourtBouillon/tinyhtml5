@@ -518,8 +518,10 @@ class TreeBuilder:
             # investigate it more closely.
             self.generateImpliedEndTags(exclude)
 
-    def getDocument(self):
+    def getDocument(self, full_tree=False):
         """Return the final tree"""
+        if full_tree:
+            return self.document._element
         if self.defaultNamespace is not None:
             return self.document._element.find(
                 "{%s}html" % self.defaultNamespace)

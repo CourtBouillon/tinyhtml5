@@ -227,7 +227,7 @@ class HTMLParser(object):
             if reprocess:
                 assert self.phase not in phases
 
-    def parse(self, stream, *args, **kwargs):
+    def parse(self, stream, full_tree=False, *args, **kwargs):
         """Parse a HTML document into a well-formed tree
 
         :arg stream: a file-like object or string containing the HTML to be parsed
@@ -250,7 +250,30 @@ class HTMLParser(object):
 
         """
         self._parse(stream, False, None, *args, **kwargs)
-        return self.tree.getDocument()
+        return self.tree.getDocument(full_tree)
+
+    def parseFragment(self, stream, *args, **kwargs):
+        """Parse a HTML fragment into a well-formed tree fragment
+
+        :arg stream: a file-like object or string containing the HTML to be parsed
+
+            The optional encoding parameter must be a string that indicates
+            the encoding.  If specified, that encoding will be used,
+            regardless of any BOM or later declaration (such as in a meta
+            element)
+
+        :returns: parsed fragment
+
+        Example:
+
+        >>> from html5lib.html5libparser import HTMLParser
+        >>> parser = HTMLParser()
+        >>> parser.parseFragment('<b>this is a fragment</b>')
+        <Element u'DOCUMENT_FRAGMENT' at 0x7feac484b090>
+
+        """
+        self._parse(stream, True, *args, **kwargs)
+        return self.tree.getFragment()
 
     def parseError(self, errorcode="XXX-undefined-error", datavars=None):
         # XXX The idea is to make errorcode mandatory.
