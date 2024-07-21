@@ -3,13 +3,13 @@ from collections import defaultdict
 
 
 class Data:
-    def __init__(self, filename, newTestHeading="data", encoding="utf8"):
+    def __init__(self, filename, new_test_heading="data", encoding="utf8"):
         if encoding is None:
             self.f = open(filename, mode="rb")
         else:
             self.f = codecs.open(filename, encoding=encoding)
         self.encoding = encoding
-        self.newTestHeading = newTestHeading
+        self.new_test_heading = new_test_heading
 
     def __iter__(self):
         data = defaultdict(lambda: None)
@@ -17,7 +17,7 @@ class Data:
         for line in self.f:
             heading = self.is_section_heading(line)
             if heading:
-                if data and heading == self.newTestHeading:
+                if data and heading == self.new_test_heading:
                     # Remove trailing newline
                     data[key] = data[key][:-1]
                     yield self.normalise_output(data)

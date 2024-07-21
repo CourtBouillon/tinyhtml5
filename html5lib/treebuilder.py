@@ -1,236 +1,206 @@
 """Tree builder."""
 
-from xml.etree import ElementTree
 from copy import copy
+from xml.etree import ElementTree
 
-from .constants import scopingElements, tableInsertModeElements, namespaces
-
+from .constants import namespaces, scoping_elements, table_insert_mode_elements
 
 # The scope markers are inserted when entering object elements,
 # marquees, table cells, and table captions, and are used to prevent formatting
 # from "leaking" into tables, object elements, and marquees.
 Marker = None
 
-listElementsMap = {
-    None: (frozenset(scopingElements), False),
-    "button": (frozenset(scopingElements | {(namespaces["html"], "button")}), False),
-    "list": (frozenset(scopingElements | {(namespaces["html"], "ol"),
-                                          (namespaces["html"], "ul")}), False),
-    "table": (frozenset([(namespaces["html"], "html"),
-                         (namespaces["html"], "table")]), False),
-    "select": (frozenset([(namespaces["html"], "optgroup"),
-                          (namespaces["html"], "option")]), True)
+_html = namespaces["html"]
+_list_elements = {
+    None: (frozenset(scoping_elements), False),
+    "button": (frozenset(scoping_elements | {(_html, "button")}), False),
+    "list": (frozenset(scoping_elements | {(_html, "ol"), (_html, "ul")}), False),
+    "table": (frozenset([(_html, "html"), (_html, "table")]), False),
+    "select": (frozenset([(_html, "optgroup"), (_html, "option")]), True),
 }
+# XXX td, th and tr are not actually needed.
+_implied_end_tags = frozenset(("dd", "dt", "li", "option", "optgroup", "p", "rp", "rt"))
 
 
 class ActiveFormattingElements(list):
     def append(self, node):
         """Append node to the end of the list."""
-        equalCount = 0
+        equal_count = 0
         if node is not Marker:
             for element in self[::-1]:
                 if element is Marker:
                     break
-                if self.nodesEqual(element, node):
-                    equalCount += 1
-                if equalCount == 3:
+                nodes_equal = (
+                    element.name_tuple == node.name_tuple and
+                    element.attributes == node.attributes)
+                if nodes_equal:
+                    equal_count += 1
+                if equal_count == 3:
                     self.remove(element)
                     break
         list.append(self, node)
-
-    def nodesEqual(self, node1, node2):
-        if not node1.nameTuple == node2.nameTuple:
-            return False
-
-        if not node1.attributes == node2.attributes:
-            return False
-
-        return True
 
 
 class Element:
     def __init__(self, name, namespace=None):
         self._name = name
         self._namespace = namespace
-        self._element = ElementTree.Element(self._getETreeTag(name, namespace))
+        self._element = ElementTree.Element(self._get_etree_tag(name, namespace))
         if namespace is None:
-            self.nameTuple = namespaces["html"], self._name
+            self.name_tuple = _html, self._name
         else:
-            self.nameTuple = self._namespace, self._name
-        self._childNodes = []
+            self.name_tuple = self._namespace, self._name
+        self._children = []
         self._flags = []
 
-        # The parent of the current node (or None for the document node)
+        # The parent of the current node (or None for the document node).
         self.parent = None
 
     def __str__(self):
-        attributesStr = " ".join(["%s=\"%s\"" % (name, value)
-                                  for name, value in
-                                  self.attributes.items()])
-        if attributesStr:
-            return "<%s %s>" % (self.name, attributesStr)
-        else:
-            return "<%s>" % (self.name)
+        attributes = " ".join(
+            f'{name}="{value}"' for name, value in self.attributes.items())
+        return f"<{self.name} {attributes}>" if attributes else f"{self.name}"
 
     def __repr__(self):
-        return "<%s>" % (self.name)
+        return f"<{self.name}>"
 
-    def _getETreeTag(self, name, namespace):
-        if namespace is None:
-            etree_tag = name
-        else:
-            etree_tag = "{%s}%s" % (namespace, name)
-        return etree_tag
+    def _get_etree_tag(self, name, namespace):
+        return name if namespace is None else f"{{{namespace}}}{name}"
 
-    def _setName(self, name):
+    def _set_name(self, name):
         self._name = name
-        self._element.tag = self._getETreeTag(self._name, self._namespace)
+        self._element.tag = self._get_etree_tag(self._name, self._namespace)
 
-    def _getName(self):
+    def _get_name(self):
         return self._name
 
-    # The tag name associated with the node
-    name = property(_getName, _setName)
+    # The tag name associated with the node.
+    name = property(_get_name, _set_name)
 
-    def _setNamespace(self, namespace):
+    def _set_namespace(self, namespace):
         self._namespace = namespace
-        self._element.tag = self._getETreeTag(self._name, self._namespace)
+        self._element.tag = self._get_etree_tag(self._name, self._namespace)
 
-    def _getNamespace(self):
+    def _get_namespace(self):
         return self._namespace
 
-    namespace = property(_getNamespace, _setNamespace)
+    namespace = property(_get_namespace, _set_namespace)
 
-    def _getAttributes(self):
+    def _get_attributes(self):
         return self._element.attrib
 
-    def _setAttributes(self, attributes):
-        el_attrib = self._element.attrib
-        el_attrib.clear()
+    def _set_attributes(self, attributes):
+        element_attributes = self._element.attrib
+        element_attributes.clear()
         if attributes:
-            # calling .items _always_ allocates, and the above truthy check is cheaper than the
-            # allocation on average
+            # Calling .items _always_ allocates, and the above truthy check is
+            # cheaper than the allocation on average.
             for key, value in attributes.items():
-                if isinstance(key, tuple):
-                    name = "{%s}%s" % (key[2], key[1])
-                else:
-                    name = key
-                el_attrib[name] = value
+                name = f"{{{key[2]}}}{key[1]}" if isinstance(key, tuple) else key
+                element_attributes[name] = value
 
     # A dict holding name -> value pairs for attributes of the node
-    attributes = property(_getAttributes, _setAttributes)
+    attributes = property(_get_attributes, _set_attributes)
 
-    def _getChildNodes(self):
-        return self._childNodes
+    def _get_children(self):
+        return self._children
 
-    def _setChildNodes(self, value):
+    def _set_children(self, value):
         del self._element[:]
-        self._childNodes = []
+        self._children = []
         for element in value:
-            self.insertChild(element)
+            self.insert_child(element)
 
     # A list of child nodes of the current node. This must include all
     # elements but not necessarily other node types.
-    childNodes = property(_getChildNodes, _setChildNodes)
+    children = property(_get_children, _set_children)
 
-    def hasContent(self):
-        """Return true if the node has children or text, false otherwise."""
+    def has_content(self):
+        """Return True if the node has children or text, False otherwise."""
         return bool(self._element.text or len(self._element))
 
-    def appendChild(self, node):
-        """Insert node as a child of the current node
-
-        :arg node: the node to insert
-
-        """
-        self._childNodes.append(node)
+    def append_child(self, node):
+        """Insert node as a child of the current node."""
+        self._children.append(node)
         self._element.append(node._element)
         node.parent = self
 
-    def insertBefore(self, node, refNode):
-        """Insert node as a child of the current node, before refNode in the
-        list of child nodes. Raises ValueError if refNode is not a child of
-        the current node
+    def insert_before(self, node, reference):
+        """Insert node as a child of the current node, before reference.
 
-        :arg node: the node to insert
-
-        :arg refNode: the child node to insert the node before
+        Raise ValueError if reference is not a child of the current node.
 
         """
-        index = list(self._element).index(refNode._element)
+        index = list(self._element).index(reference._element)
         self._element.insert(index, node._element)
         node.parent = self
 
-    def removeChild(self, node):
-        """Remove node from the children of the current node
-
-        :arg node: the child node to remove
-
-        """
-        self._childNodes.remove(node)
+    def remove_child(self, node):
+        """Remove node from the children of the current node."""
+        self._children.remove(node)
         self._element.remove(node._element)
         node.parent = None
 
-    def insertText(self, data, insertBefore=None):
-        """Insert data as text in the current node, positioned before the
-        start of node insertBefore or to the end of the node's text.
+    def insert_text(self, text, insert_before=None):
+        """Insert data as text in the current node.
 
-        :arg data: the data to insert
+        Text is positioned before the start of node insert_before or to the end
+        of the node's text.
 
-        :arg insertBefore: True if you want to insert the text before the node
-            and False if you want to insert it after the node
+        If insert_before is a node, insert the text before this node.
 
         """
         if not len(self._element):
             if not self._element.text:
                 self._element.text = ""
-            self._element.text += data
-        elif insertBefore is None:
+            self._element.text += text
+        elif insert_before is None:
             # Insert the text as the tail of the last child element
             if not self._element[-1].tail:
                 self._element[-1].tail = ""
-            self._element[-1].tail += data
+            self._element[-1].tail += text
         else:
             # Insert the text before the specified node
             children = list(self._element)
-            index = children.index(insertBefore._element)
+            index = children.index(insert_before._element)
             if index > 0:
                 if not self._element[index - 1].tail:
                     self._element[index - 1].tail = ""
-                self._element[index - 1].tail += data
+                self._element[index - 1].tail += text
             else:
                 if not self._element.text:
                     self._element.text = ""
-                self._element.text += data
+                self._element.text += text
 
-    def cloneNode(self):
-        """Return a shallow copy of the current node i.e. a node with the same
-        name and attributes but with no parent or child nodes
+    def clone(self):
+        """Return a shallow copy of the current node.
+
+        The node has the same name and attributes, but no parent or children.
+
         """
         element = type(self)(self.name, self.namespace)
         if self._element.attrib:
             element._element.attrib = copy(self._element.attrib)
         return element
 
-    def reparentChildren(self, newParent):
-        """Move all the children of the current node to newParent.
-        This is needed so that trees that don't store text as nodes move the
-        text in the correct way
+    def reparent_children(self, parent):
+        """Move all the children of the current node to parent.
 
-        :arg newParent: the node to move all this node's children to
+        This is needed so that trees that don't store text as nodes move the
+        text in the correct way.
 
         """
-        if newParent.childNodes:
-            newParent.childNodes[-1]._element.tail += self._element.text
+        if parent.children:
+            parent.children[-1]._element.tail += self._element.text
         else:
-            if not newParent._element.text:
-                newParent._element.text = ""
+            if not parent._element.text:
+                parent._element.text = ""
             if self._element.text is not None:
-                newParent._element.text += self._element.text
+                parent._element.text += self._element.text
         self._element.text = ""
-        for child in self.childNodes:
-            newParent.appendChild(child)
-        self.childNodes = []
+        for child in self.children:
+            parent.append_child(child)
+        self.children = []
 
 
 class Comment(Element):
@@ -239,42 +209,42 @@ class Comment(Element):
         # wrapper element
         self._element = ElementTree.Comment(data)
         self.parent = None
-        self._childNodes = []
+        self._children = []
         self._flags = []
 
-    def _getData(self):
+    def _get_data(self):
         return self._element.text
 
-    def _setData(self, value):
+    def _set_data(self, value):
         self._element.text = value
 
-    data = property(_getData, _setData)
+    data = property(_get_data, _set_data)
 
 
 class DocumentType(Element):
-    def __init__(self, name, publicId, systemId):
+    def __init__(self, name, public_id, system_id):
         Element.__init__(self, "<!DOCTYPE>")
         self._element.text = name
-        self.publicId = publicId
-        self.systemId = systemId
+        self.public_id = public_id
+        self.system_id = system_id
 
-    def _getPublicId(self):
+    def _get_public_id(self):
         return self._element.get("publicId", "")
 
-    def _setPublicId(self, value):
+    def _set_public_id(self, value):
         if value is not None:
             self._element.set("publicId", value)
 
-    publicId = property(_getPublicId, _setPublicId)
+    public_id = property(_get_public_id, _set_public_id)
 
-    def _getSystemId(self):
+    def _get_system_id(self):
         return self._element.get("systemId", "")
 
-    def _setSystemId(self, value):
+    def _set_system_id(self, value):
         if value is not None:
             self._element.set("systemId", value)
 
-    systemId = property(_getSystemId, _setSystemId)
+    system_id = property(_get_system_id, _set_system_id)
 
 
 class Document(Element):
@@ -290,109 +260,111 @@ class DocumentFragment(Element):
 class TreeBuilder:
     """Tree builder."""
 
-    def __init__(self, namespaceHTMLElements):
-        """Create a TreeBuilder
+    def __init__(self, namespace_html_elements):
+        """Create a TreeBuilder.
 
-        :arg namespaceHTMLElements: whether or not to namespace HTML elements
+        If namespace_html_elements is True, namespace HTML elements.
 
         """
-        if namespaceHTMLElements:
-            self.defaultNamespace = "http://www.w3.org/1999/xhtml"
+        if namespace_html_elements:
+            self.default_namespace = "http://www.w3.org/1999/xhtml"
         else:
-            self.defaultNamespace = None
+            self.default_namespace = None
         self.reset()
 
     def reset(self):
-        self.openElements = []
-        self.activeFormattingElements = ActiveFormattingElements()
+        self.open_elements = []
+        self.active_formatting_elements = ActiveFormattingElements()
 
-        # XXX - rename these to headElement, formElement
-        self.headPointer = None
-        self.formPointer = None
+        self.head_element = None
+        self.form_element = None
 
-        self.insertFromTable = False
+        self.insert_from_table = False
 
         self.document = Document()
 
-    def elementInScope(self, target, variant=None):
-
-        # If we pass a node in we match that. if we pass a string
-        # match any node with that name
-        exactNode = hasattr(target, "nameTuple")
-        if not exactNode:
+    def element_in_scope(self, target, variant=None):
+        # If we pass a node in we match that. If we pass a string
+        # match any node with that name.
+        exact_node = hasattr(target, "name_tuple")
+        if not exact_node:
             if isinstance(target, str):
-                target = (namespaces["html"], target)
+                target = (_html, target)
             assert isinstance(target, tuple)
 
-        listElements, invert = listElementsMap[variant]
+        list_elements, invert = _list_elements[variant]
 
-        for node in reversed(self.openElements):
-            if exactNode and node == target:
+        for node in reversed(self.open_elements):
+            if exact_node and node == target:
                 return True
-            elif not exactNode and node.nameTuple == target:
+            elif not exact_node and node.name_tuple == target:
                 return True
-            elif (invert ^ (node.nameTuple in listElements)):
+            elif (invert ^ (node.name_tuple in list_elements)):
                 return False
 
-        assert False  # We should never reach this point
+        # We should never reach this point.
+        assert False
 
-    def reconstructActiveFormattingElements(self):
+    def reconstruct_active_formatting_elements(self):
         # Within this algorithm the order of steps described in the
         # specification is not quite the same as the order of steps in the
         # code. It should still do the same though.
 
         # Step 1: stop the algorithm when there's nothing to do.
-        if not self.activeFormattingElements:
+        if not self.active_formatting_elements:
             return
 
         # Step 2 and step 3: we start with the last element. So i is -1.
-        i = len(self.activeFormattingElements) - 1
-        entry = self.activeFormattingElements[i]
-        if entry is Marker or entry in self.openElements:
+        i = len(self.active_formatting_elements) - 1
+        entry = self.active_formatting_elements[i]
+        if entry is Marker or entry in self.open_elements:
             return
 
-        # Step 6
-        while entry is not Marker and entry not in self.openElements:
+        # Step 6.
+        while entry is not Marker and entry not in self.open_elements:
             if i == 0:
-                # This will be reset to 0 below
+                # This will be reset to 0 below.
                 i = -1
                 break
             i -= 1
             # Step 5: let entry be one earlier in the list.
-            entry = self.activeFormattingElements[i]
+            entry = self.active_formatting_elements[i]
 
         while True:
-            # Step 7
+            # Step 7.
             i += 1
 
-            # Step 8
-            entry = self.activeFormattingElements[i]
-            clone = entry.cloneNode()  # Mainly to get a new copy of the attributes
+            # Step 8.
+            entry = self.active_formatting_elements[i]
+            clone = entry.clone()  # mainly to get a new copy of the attributes
 
-            # Step 9
-            element = self.insertElement({"type": "StartTag",
-                                          "name": clone.name,
-                                          "namespace": clone.namespace,
-                                          "data": clone.attributes})
+            # Step 9.
+            element = self.insert_element({
+                "type": "StartTag",
+                "name": clone.name,
+                "namespace": clone.namespace,
+                "data": clone.attributes,
+            })
 
-            # Step 10
-            self.activeFormattingElements[i] = element
+            # Step 10.
+            self.active_formatting_elements[i] = element
 
-            # Step 11
-            if element == self.activeFormattingElements[-1]:
+            # Step 11.
+            if element == self.active_formatting_elements[-1]:
                 break
 
-    def clearActiveFormattingElements(self):
-        entry = self.activeFormattingElements.pop()
-        while self.activeFormattingElements and entry is not Marker:
-            entry = self.activeFormattingElements.pop()
+    def clear_active_formatting_elements(self):
+        entry = self.active_formatting_elements.pop()
+        while self.active_formatting_elements and entry is not Marker:
+            entry = self.active_formatting_elements.pop()
 
-    def elementInActiveFormattingElements(self, name):
-        """Check if an element exists between the end of the active
-        formatting elements and the last marker. If it does, return it, else
-        return false"""
+    def element_in_active_formatting_elements(self, name):
+        """Find name between end of active formatting elements and last marker.
 
-        for item in self.activeFormattingElements[::-1]:
+        If an element with this name exists, return it. Else return False.
+
+        """
+        for item in self.active_formatting_elements[::-1]:
             # Check for Marker first because if it's a Marker it doesn't have a
             # name attribute.
             if item is Marker:
@@ -401,136 +373,132 @@ class TreeBuilder:
                 return item
         return False
 
-    def insertRoot(self, token):
-        element = self.createElement(token)
-        self.openElements.append(element)
-        self.document.appendChild(element)
+    def insert_root(self, token):
+        element = self.create_element(token)
+        self.open_elements.append(element)
+        self.document.append_child(element)
 
-    def insertDoctype(self, token):
+    def insert_doctype(self, token):
         name = token["name"]
-        publicId = token["publicId"]
-        systemId = token["systemId"]
+        public_id = token["publicId"]
+        system_id = token["systemId"]
 
-        doctype = DocumentType(name, publicId, systemId)
-        self.document.appendChild(doctype)
+        doctype = DocumentType(name, public_id, system_id)
+        self.document.append_child(doctype)
 
-    def insertComment(self, token, parent=None):
+    def insert_comment(self, token, parent=None):
         if parent is None:
-            parent = self.openElements[-1]
-        parent.appendChild(Comment(token["data"]))
+            parent = self.open_elements[-1]
+        parent.append_child(Comment(token["data"]))
 
-    def createElement(self, token):
-        """Create an element but don't insert it anywhere"""
+    def create_element(self, token):
+        """Create an element but don't insert it anywhere."""
         name = token["name"]
-        namespace = token.get("namespace", self.defaultNamespace)
+        namespace = token.get("namespace", self.default_namespace)
         element = Element(name, namespace)
         element.attributes = token["data"]
         return element
 
-    def _getInsertFromTable(self):
-        return self._insertFromTable
+    def _get_insert_from_table(self):
+        return self._insert_from_table
 
-    def _setInsertFromTable(self, value):
-        """Switch the function used to insert an element from the
-        normal one to the misnested table one and back again"""
-        self._insertFromTable = value
+    def _set_insert_from_table(self, value):
+        """Switch the function used to insert an element."""
+        self._insert_from_table = value
         if value:
-            self.insertElement = self.insertElementTable
+            self.insert_element = self.insert_element_table
         else:
-            self.insertElement = self.insertElementNormal
+            self.insert_element = self.insert_element_normal
 
-    insertFromTable = property(_getInsertFromTable, _setInsertFromTable)
+    insert_from_table = property(_get_insert_from_table, _set_insert_from_table)
 
-    def insertElementNormal(self, token):
+    def insert_element_normal(self, token):
         name = token["name"]
-        assert isinstance(name, str), "Element %s not unicode" % name
-        namespace = token.get("namespace", self.defaultNamespace)
+        assert isinstance(name, str), f"Element {name} not unicode"
+        namespace = token.get("namespace", self.default_namespace)
         element = Element(name, namespace)
         element.attributes = token["data"]
-        self.openElements[-1].appendChild(element)
-        self.openElements.append(element)
+        self.open_elements[-1].append_child(element)
+        self.open_elements.append(element)
         return element
 
-    def insertElementTable(self, token):
-        """Create an element and insert it into the tree"""
-        element = self.createElement(token)
-        if self.openElements[-1].name not in tableInsertModeElements:
-            return self.insertElementNormal(token)
+    def insert_element_table(self, token):
+        """Create an element and insert it into the tree."""
+        element = self.create_element(token)
+        if self.open_elements[-1].name not in table_insert_mode_elements:
+            return self.insert_element_normal(token)
         else:
             # We should be in the InTable mode. This means we want to do
-            # special magic element rearranging
-            parent, insertBefore = self.getTableMisnestedNodePosition()
-            if insertBefore is None:
-                parent.appendChild(element)
+            # special magic element rearranging.
+            parent, insert_before = self.get_table_misnested_node_position()
+            if insert_before is None:
+                parent.append_child(element)
             else:
-                parent.insertBefore(element, insertBefore)
-            self.openElements.append(element)
+                parent.insert_before(element, insert_before)
+            self.open_elements.append(element)
         return element
 
-    def insertText(self, data, parent=None):
+    def insert_text(self, data, parent=None):
         """Insert text data."""
         if parent is None:
-            parent = self.openElements[-1]
+            parent = self.open_elements[-1]
 
-        if (not self.insertFromTable or (self.insertFromTable and
-                                         self.openElements[-1].name
-                                         not in tableInsertModeElements)):
-            parent.insertText(data)
-        else:
+        in_table = (
+            self.insert_from_table and
+            self.open_elements[-1].name in table_insert_mode_elements)
+        if in_table:
             # We should be in the InTable mode. This means we want to do
-            # special magic element rearranging
-            parent, insertBefore = self.getTableMisnestedNodePosition()
-            parent.insertText(data, insertBefore)
-
-    def getTableMisnestedNodePosition(self):
-        """Get the foster parent element, and sibling to insert before
-        (or None) when inserting a misnested table node"""
-        # The foster parent element is the one which comes before the most
-        # recently opened table element
-        # XXX - this is really inelegant
-        lastTable = None
-        fosterParent = None
-        insertBefore = None
-        for elm in self.openElements[::-1]:
-            if elm.name == "table":
-                lastTable = elm
-                break
-        if lastTable:
-            # XXX - we should really check that this parent is actually a
-            # node here
-            if lastTable.parent:
-                fosterParent = lastTable.parent
-                insertBefore = lastTable
-            else:
-                fosterParent = self.openElements[
-                    self.openElements.index(lastTable) - 1]
+            # special magic element rearranging.
+            parent, insert_before = self.get_table_misnested_node_position()
+            parent.insert_text(data, insert_before)
         else:
-            fosterParent = self.openElements[0]
-        return fosterParent, insertBefore
+            parent.insert_text(data)
 
-    def generateImpliedEndTags(self, exclude=None):
-        name = self.openElements[-1].name
-        # XXX td, th and tr are not actually needed
-        if (name in frozenset(("dd", "dt", "li", "option", "optgroup", "p", "rp", "rt")) and
-                name != exclude):
-            self.openElements.pop()
+    def get_table_misnested_node_position(self):
+        """Get foster parent element and sibling (or None) to insert before."""
+
+        # The foster parent element is the one which comes before the most
+        # recently opened table element.
+
+        # XXX - this is really inelegant.
+        last_table = None
+        foster_parent = None
+        insert_before = None
+        for element in self.open_elements[::-1]:
+            if element.name == "table":
+                last_table = element
+                break
+        if last_table:
+            # XXX - we should really check that this parent is actually a
+            # node here.
+            if last_table.parent:
+                foster_parent = last_table.parent
+                insert_before = last_table
+            else:
+                index = self.open_elements.index(last_table) - 1
+                foster_parent = self.open_elements[index]
+        else:
+            foster_parent = self.open_elements[0]
+        return foster_parent, insert_before
+
+    def generate_implied_end_tags(self, exclude=None):
+        name = self.open_elements[-1].name
+        if name in _implied_end_tags and name != exclude:
+            self.open_elements.pop()
             # XXX This is not entirely what the specification says. We should
             # investigate it more closely.
-            self.generateImpliedEndTags(exclude)
+            self.generate_implied_end_tags(exclude)
 
-    def getDocument(self, full_tree=False):
-        """Return the final tree"""
+    def get_document(self, full_tree=False):
+        """Return the final tree."""
         if full_tree:
             return self.document._element
-        if self.defaultNamespace is not None:
-            return self.document._element.find(
-                "{%s}html" % self.defaultNamespace)
-        else:
-            return self.document._element.find("html")
+        return self.document._element.find(
+            "html" if self.default_namespace is None else
+            f"{{{self.default_namespace}}}html")
 
-    def getFragment(self):
-        """Return the final fragment"""
-        # assert self.innerHTML
+    def get_fragment(self):
+        """Return the final fragment."""
         fragment = DocumentFragment()
-        self.openElements[0].reparentChildren(fragment)
+        self.open_elements[0].reparent_children(fragment)
         return fragment._element

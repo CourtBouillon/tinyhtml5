@@ -19,10 +19,9 @@ class TokenizerTestParser:
 
         tokenizer.state = getattr(tokenizer, self._state)
         if self._last_start_tag is not None:
-            tokenizer.currentToken = {
-                'type': 'startTag', 'name': self._last_start_tag}
+            tokenizer.current_token = {'type': 'startTag', 'name': self._last_start_tag}
 
-        types = {value: key.lower() for key, value in constants.tokenTypes.items()}
+        types = {value: key.lower() for key, value in constants.token_types.items()}
         for token in tokenizer:
             getattr(self, f'process_{types[token["type"]]}')(token)
 
@@ -166,7 +165,7 @@ def test_tokenizer(id, test):
         test = unescape(test)
     for initial_state in test.get('initialStates'):
         initial_state = re.compile(r'\W+(\w)').sub(
-            lambda match: match.group(1).upper(), initial_state.lower())
+            lambda match: f'_{match.group(1)}', initial_state.lower())
         expected = test['output']
         parser = TokenizerTestParser(initial_state, test.get('lastStartTag'))
         tokens = parser.parse(test['input'])

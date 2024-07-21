@@ -12,8 +12,8 @@
 # All configuration values have a default; values that are commented out
 # serve to show the default.
 
-import sys
 import os
+import sys
 
 # -- General configuration -----------------------------------------------------
 
@@ -88,8 +88,8 @@ man_pages = [
 #  dir menu entry, description, category)
 texinfo_documents = [
     ('index', 'html5lib', 'html5lib Documentation',
-     'James Graham, Sam Sneddon, and contributors', 'html5lib', 'One line description of project.',
-     'Miscellaneous'),
+     'James Graham, Sam Sneddon, and contributors', 'html5lib',
+     'One line description of project.', 'Miscellaneous'),
 ]
 
 

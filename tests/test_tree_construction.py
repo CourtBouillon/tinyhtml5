@@ -3,8 +3,7 @@ from xml.etree import ElementTree
 
 import pytest
 
-from html5lib import constants
-from html5lib.html5parser import HTMLParser
+from html5lib import HTMLParser, constants
 
 from . import Data
 
@@ -116,14 +115,14 @@ def test_tree_construction(id, test, namespace):
         pytest.xfail()
 
     # TODO: Check error messages.
-    parser = HTMLParser(namespaceHTMLElements=namespace)
+    parser = HTMLParser(namespace_html_elements=namespace)
 
     input = test['data']
     fragment_container = test['document-fragment']
     expected = '\n'.join(convert(test['document'].split('\n'), 2))
 
     if fragment_container:
-        document = parser.parseFragment(input, fragment_container)
+        document = parser.parse_fragment(input, fragment_container)
     else:
         document = parser.parse(input, full_tree=True)
 

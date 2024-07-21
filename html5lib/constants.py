@@ -300,7 +300,7 @@ namespaces = {
     "xmlns": "http://www.w3.org/2000/xmlns/"
 }
 
-scopingElements = frozenset([
+scoping_elements = frozenset([
     (namespaces["html"], "applet"),
     (namespaces["html"], "caption"),
     (namespaces["html"], "html"),
@@ -320,7 +320,7 @@ scopingElements = frozenset([
     (namespaces["svg"], "title"),
 ])
 
-formattingElements = frozenset([
+formatting_elements = frozenset([
     (namespaces["html"], "a"),
     (namespaces["html"], "b"),
     (namespaces["html"], "big"),
@@ -337,7 +337,7 @@ formattingElements = frozenset([
     (namespaces["html"], "u")
 ])
 
-specialElements = frozenset([
+special_elements = frozenset([
     (namespaces["html"], "address"),
     (namespaces["html"], "applet"),
     (namespaces["html"], "area"),
@@ -420,14 +420,14 @@ specialElements = frozenset([
     (namespaces["svg"], "foreignObject")
 ])
 
-htmlIntegrationPointElements = frozenset([
+html_integration_point_elements = frozenset([
     (namespaces["mathml"], "annotation-xml"),
     (namespaces["svg"], "foreignObject"),
     (namespaces["svg"], "desc"),
     (namespaces["svg"], "title")
 ])
 
-mathmlTextIntegrationPointElements = frozenset([
+mathml_text_integration_point_elements = frozenset([
     (namespaces["mathml"], "mi"),
     (namespaces["mathml"], "mo"),
     (namespaces["mathml"], "mn"),
@@ -435,7 +435,7 @@ mathmlTextIntegrationPointElements = frozenset([
     (namespaces["mathml"], "mtext")
 ])
 
-adjustSVGAttributes = {
+adjust_svg_attributes = {
     "attributename": "attributeName",
     "attributetype": "attributeType",
     "basefrequency": "baseFrequency",
@@ -500,9 +500,9 @@ adjustSVGAttributes = {
     "zoomandpan": "zoomAndPan"
 }
 
-adjustMathMLAttributes = {"definitionurl": "definitionURL"}
+adjust_mathml_attributes = {"definitionurl": "definitionURL"}
 
-adjustForeignAttributes = {
+adjust_foreign_attributes = {
     "xlink:actuate": ("xlink", "actuate", namespaces["xlink"]),
     "xlink:arcrole": ("xlink", "arcrole", namespaces["xlink"]),
     "xlink:href": ("xlink", "href", namespaces["xlink"]),
@@ -517,10 +517,11 @@ adjustForeignAttributes = {
     "xmlns:xlink": ("xmlns", "xlink", namespaces["xmlns"])
 }
 
-unadjustForeignAttributes = {(ns, local): qname for qname, (prefix, local, ns) in
-                             adjustForeignAttributes.items()}
+unadjust_foreign_attributes = {
+    (ns, local): qname for qname, (prefix, local, ns) in
+    adjust_foreign_attributes.items()}
 
-spaceCharacters = frozenset([
+space_characters = frozenset([
     "\t",
     "\n",
     "\u000C",
@@ -528,7 +529,7 @@ spaceCharacters = frozenset([
     "\r"
 ])
 
-tableInsertModeElements = frozenset([
+table_insert_mode_elements = frozenset([
     "table",
     "tbody",
     "tfoot",
@@ -536,16 +537,16 @@ tableInsertModeElements = frozenset([
     "tr"
 ])
 
-asciiLowercase = frozenset(string.ascii_lowercase)
-asciiUppercase = frozenset(string.ascii_uppercase)
-asciiLetters = frozenset(string.ascii_letters)
+ascii_lowercase = frozenset(string.ascii_lowercase)
+ascii_uppercase = frozenset(string.ascii_uppercase)
+ascii_letters = frozenset(string.ascii_letters)
 digits = frozenset(string.digits)
-hexDigits = frozenset(string.hexdigits)
+hex_digits = frozenset(string.hexdigits)
 
-asciiUpper2Lower = {ord(c): ord(c.lower()) for c in string.ascii_uppercase}
+ascii_upper_to_lower = {ord(c): ord(c.lower()) for c in string.ascii_uppercase}
 
 # Heading elements need to be ordered
-headingElements = (
+heading_elements = (
     "h1",
     "h2",
     "h3",
@@ -554,7 +555,7 @@ headingElements = (
     "h6"
 )
 
-voidElements = frozenset([
+void_elements = frozenset([
     "area",
     "base",
     "br",
@@ -585,9 +586,9 @@ voidElements = frozenset([
 # ^3: param
 #     https://developer.mozilla.org/en-US/docs/Web/HTML/Element/param
 
-cdataElements = frozenset(['title', 'textarea'])
+cdata_elements = frozenset(['title', 'textarea'])
 
-rcdataElements = frozenset([
+rcdata_elements = frozenset([
     'style',
     'script',
     'xmp',
@@ -597,7 +598,7 @@ rcdataElements = frozenset([
     'noscript'
 ])
 
-booleanAttributes = {
+boolean_attributes = {
     "": frozenset(["irrelevant", "itemscope"]),
     "style": frozenset(["scoped"]),
     "img": frozenset(["ismap"]),
@@ -613,7 +614,8 @@ booleanAttributes = {
     "option": frozenset(["disabled", "readonly", "selected"]),
     "optgroup": frozenset(["disabled", "readonly"]),
     "button": frozenset(["disabled", "autofocus"]),
-    "input": frozenset(["disabled", "readonly", "required", "autofocus", "checked", "ismap"]),
+    "input": frozenset(
+        ["disabled", "readonly", "required", "autofocus", "checked", "ismap"]),
     "select": frozenset(["disabled", "readonly", "autofocus", "multiple"]),
     "ol": frozenset(["reversed"]),
     "output": frozenset(["disabled", "readonly"]),
@@ -622,7 +624,7 @@ booleanAttributes = {
 
 # entitiesWindows1252 has to be _ordered_ and needs to have an index. It
 # therefore can't be a frozenset.
-entitiesWindows1252 = (
+entities_windows1252 = (
     8364,   # 0x80  0x20AC  EURO SIGN
     65533,  # 0x81          UNDEFINED
     8218,   # 0x82  0x201A  SINGLE LOW-9 QUOTATION MARK
@@ -657,7 +659,7 @@ entitiesWindows1252 = (
     376     # 0x9F  0x0178  LATIN CAPITAL LETTER Y WITH DIAERESIS
 )
 
-xmlEntities = frozenset(['lt;', 'gt;', 'amp;', 'apos;', 'quot;'])
+xml_entities = frozenset(['lt;', 'gt;', 'amp;', 'apos;', 'quot;'])
 
 entities = {
     "AElig": "\xc6",
@@ -2893,7 +2895,7 @@ entities = {
     "zwnj;": "\u200c",
 }
 
-replacementCharacters = {
+replacement_characters = {
     0x0: "\uFFFD",
     0x0d: "\u000D",
     0x80: "\u20AC",
@@ -2930,7 +2932,7 @@ replacementCharacters = {
     0x9F: "\u0178",
 }
 
-tokenTypes = {
+token_types = {
     "Doctype": 0,
     "Characters": 1,
     "SpaceCharacters": 2,
@@ -2941,13 +2943,13 @@ tokenTypes = {
     "ParseError": 7
 }
 
-tagTokenTypes = frozenset([tokenTypes["StartTag"], tokenTypes["EndTag"],
-                           tokenTypes["EmptyTag"]])
+tag_token_types = frozenset(
+    [token_types["StartTag"], token_types["EndTag"], token_types["EmptyTag"]])
 
 
-prefixes = {v: k for k, v in namespaces.items()}
+prefixes = {url: name for name, url in namespaces.items()}
 prefixes["http://www.w3.org/1998/Math/MathML"] = "math"
 
 
-class _ReparseException(Exception):
+class ReparseError(Exception):
     pass

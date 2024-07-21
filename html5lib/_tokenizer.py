@@ -1,61 +1,31 @@
 from bisect import bisect_left
-from collections import deque, OrderedDict
+from collections import deque
 from collections.abc import Mapping
-from sys import version_info
-
-from .constants import spaceCharacters
-from .constants import entities
-from .constants import asciiLetters, asciiUpper2Lower
-from .constants import digits, hexDigits, EOF
-from .constants import tokenTypes, tagTokenTypes
-from .constants import replacementCharacters
 
 from ._inputstream import HTMLInputStream
+from .constants import (
+    EOF,
+    ascii_letters,
+    ascii_upper_to_lower,
+    digits,
+    entities,
+    hex_digits,
+    replacement_characters,
+    space_characters,
+    tag_token_types,
+    token_types,
+)
 
 
-class ABCTrie(Mapping):
-    """Abstract base class for tries"""
-
-    def keys(self, prefix=None):
-        # pylint:disable=arguments-differ
-        keys = super(Trie, self).keys()
-
-        if prefix is None:
-            return set(keys)
-
-        return {x for x in keys if x.startswith(prefix)}
-
-    def has_keys_with_prefix(self, prefix):
-        for key in self.keys():
-            if key.startswith(prefix):
-                return True
-
-        return False
-
-    def longest_prefix(self, prefix):
-        if prefix in self:
-            return prefix
-
-        for i in range(1, len(prefix) + 1):
-            if prefix[:-i] in self:
-                return prefix[:-i]
-
-        raise KeyError(prefix)
-
-    def longest_prefix_item(self, prefix):
-        lprefix = self.longest_prefix(prefix)
-        return (lprefix, self[lprefix])
-
-
-class Trie(ABCTrie):
+class Trie(Mapping):
     def __init__(self, data):
-        if not all(isinstance(x, str) for x in data.keys()):
+        if any(not isinstance(key, str) for key in data.keys()):
             raise TypeError("All keys must be strings")
 
         self._data = data
         self._keys = sorted(data.keys())
-        self._cachestr = ""
-        self._cachepoints = (0, len(data))
+        self._cache_string = ""
+        self._cache_points = (0, len(data))
 
     def __contains__(self, key):
         return key in self._data
@@ -73,9 +43,8 @@ class Trie(ABCTrie):
         if prefix is None or prefix == "" or not self._keys:
             return set(self._keys)
 
-        if prefix.startswith(self._cachestr):
-            lo, hi = self._cachepoints
-            start = i = bisect_left(self._keys, prefix, lo, hi)
+        if prefix.startswith(self._cache_string):
+            start = i = bisect_left(self._keys, prefix, *self._cache_points)
         else:
             start = i = bisect_left(self._keys, prefix)
 
@@ -87,8 +56,8 @@ class Trie(ABCTrie):
             keys.add(self._keys[i])
             i += 1
 
-        self._cachestr = prefix
-        self._cachepoints = (start, i)
+        self._cache_string = prefix
+        self._cache_points = (start, i)
 
         return keys
 
@@ -96,9 +65,8 @@ class Trie(ABCTrie):
         if prefix in self._data:
             return True
 
-        if prefix.startswith(self._cachestr):
-            lo, hi = self._cachepoints
-            i = bisect_left(self._keys, prefix, lo, hi)
+        if prefix.startswith(self._cache_string):
+            i = bisect_left(self._keys, prefix, *self._cache_points)
         else:
             i = bisect_left(self._keys, prefix)
 
@@ -107,1397 +75,1657 @@ class Trie(ABCTrie):
 
         return self._keys[i].startswith(prefix)
 
+    def longest_prefix(self, prefix):
+        if prefix in self:
+            return prefix
 
-entitiesTrie = Trie(entities)
+        for i in range(1, len(prefix) + 1):
+            if prefix[:-i] in self:
+                return prefix[:-i]
 
-if version_info >= (3, 7):
-    attributeMap = dict
-else:
-    attributeMap = OrderedDict
+        raise KeyError(prefix)
+
+    def longest_prefix_item(self, prefix):
+        longest_prefix = self.longest_prefix(prefix)
+        return (longest_prefix, self[longest_prefix])
 
 
-class HTMLTokenizer(object):
-    """ This class takes care of tokenizing HTML.
+entities_trie = Trie(entities)
 
-    * self.currentToken
-      Holds the token that is currently being processed.
 
-    * self.state
-      Holds a reference to the method to be invoked... XXX
-
-    * self.stream
-      Points to HTMLInputStream object.
-    """
+class HTMLTokenizer:
+    """HTML tokenizer."""
 
     def __init__(self, stream, parser=None, **kwargs):
-
-        self.stream = HTMLInputStream(stream, **kwargs)
+        self.stream = HTMLInputStream(stream, **kwargs)  # HTMLInputStream object
         self.parser = parser
 
         # Setup the initial tokenizer state
-        self.escapeFlag = False
-        self.lastFourChars = []
-        self.state = self.dataState
-        self.escape = False
-
-        # The current token being created
-        self.currentToken = None
-        super(HTMLTokenizer, self).__init__()
+        self.state = self.data_state  # method to be invoked
+        self.current_token = None  # token currently being processed
 
     def __iter__(self):
-        """ This is where the magic happens.
+        """This is where the magic happens.
 
         We do our usually processing through the states and when we have a token
         to return we yield the token which pauses processing until the next token
         is requested.
+
         """
-        self.tokenQueue = deque([])
+        self.token_queue = deque([])
         # Start processing. When EOF is reached self.state will return False
         # instead of True and the loop will terminate.
         while self.state():
             while self.stream.errors:
-                yield {"type": tokenTypes["ParseError"], "data": self.stream.errors.pop(0)}
-            while self.tokenQueue:
-                yield self.tokenQueue.popleft()
+                yield {
+                    "type": token_types["ParseError"],
+                    "data": self.stream.errors.pop(0),
+                }
+            while self.token_queue:
+                yield self.token_queue.popleft()
 
-    def consumeNumberEntity(self, isHex):
-        """This function returns either U+FFFD or the character based on the
-        decimal or hexadecimal representation. It also discards ";" if present.
-        If not present self.tokenQueue.append({"type": tokenTypes["ParseError"]}) is invoked.
+    def consume_number_entity(self, is_hex):
+        """Return either U+FFFD or the character based on the representation.
+
+        It also discards ";" if present. If not present
+        self.token_queue.append({"type": token_types["ParseError"]}) is invoked.
+
         """
-
-        allowed = digits
-        radix = 10
-        if isHex:
-            allowed = hexDigits
-            radix = 16
-
-        charStack = []
+        allowed = hex_digits if is_hex else digits
+        radix = 16 if is_hex else 10
+        stack = []
 
         # Consume all the characters that are in range while making sure we
         # don't hit an EOF.
-        c = self.stream.char()
-        while c in allowed and c is not EOF:
-            charStack.append(c)
-            c = self.stream.char()
+        character = self.stream.character()
+        while character in allowed:
+            stack.append(character)
+            character = self.stream.character()
 
         # Convert the set of characters consumed to an int.
-        charAsInt = int("".join(charStack), radix)
+        integer = int("".join(stack), radix)
 
         # Certain characters get replaced with others
-        if charAsInt in replacementCharacters:
-            char = replacementCharacters[charAsInt]
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "illegal-codepoint-for-numeric-entity",
-                                    "datavars": {"charAsInt": charAsInt}})
-        elif ((0xD800 <= charAsInt <= 0xDFFF) or
-              (charAsInt > 0x10FFFF)):
-            char = "\uFFFD"
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "illegal-codepoint-for-numeric-entity",
-                                    "datavars": {"charAsInt": charAsInt}})
+        if integer in replacement_characters:
+            replacement = replacement_characters[integer]
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "illegal-codepoint-for-numeric-entity",
+                "datavars": {"integer": integer},
+            })
+        elif (0xD800 <= integer <= 0xDFFF) or (integer > 0x10FFFF):
+            replacement = "\uFFFD"
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "illegal-codepoint-for-numeric-entity",
+                "datavars": {"integer": integer},
+            })
         else:
-            # Should speed up this check somehow (e.g. move the set to a constant)
-            if ((0x0001 <= charAsInt <= 0x0008) or
-                (0x000E <= charAsInt <= 0x001F) or
-                (0x007F <= charAsInt <= 0x009F) or
-                (0xFDD0 <= charAsInt <= 0xFDEF) or
-                charAsInt in frozenset([0x000B, 0xFFFE, 0xFFFF, 0x1FFFE,
-                                        0x1FFFF, 0x2FFFE, 0x2FFFF, 0x3FFFE,
-                                        0x3FFFF, 0x4FFFE, 0x4FFFF, 0x5FFFE,
-                                        0x5FFFF, 0x6FFFE, 0x6FFFF, 0x7FFFE,
-                                        0x7FFFF, 0x8FFFE, 0x8FFFF, 0x9FFFE,
-                                        0x9FFFF, 0xAFFFE, 0xAFFFF, 0xBFFFE,
-                                        0xBFFFF, 0xCFFFE, 0xCFFFF, 0xDFFFE,
-                                        0xDFFFF, 0xEFFFE, 0xEFFFF, 0xFFFFE,
-                                        0xFFFFF, 0x10FFFE, 0x10FFFF])):
-                self.tokenQueue.append({"type": tokenTypes["ParseError"],
-                                        "data":
-                                        "illegal-codepoint-for-numeric-entity",
-                                        "datavars": {"charAsInt": charAsInt}})
+            # Should speed up this check somehow (e.g. move the set to a constant).
+            if ((0x0001 <= integer <= 0x0008) or
+                (0x000E <= integer <= 0x001F) or
+                (0x007F <= integer <= 0x009F) or
+                (0xFDD0 <= integer <= 0xFDEF) or
+                integer in frozenset([
+                    0x000B, 0xFFFE, 0xFFFF, 0x1FFFE, 0x1FFFF, 0x2FFFE, 0x2FFFF,
+                    0x3FFFE, 0x3FFFF, 0x4FFFE, 0x4FFFF, 0x5FFFE, 0x5FFFF,
+                    0x6FFFE, 0x6FFFF, 0x7FFFE, 0x7FFFF, 0x8FFFE, 0x8FFFF,
+                    0x9FFFE, 0x9FFFF, 0xAFFFE, 0xAFFFF, 0xBFFFE, 0xBFFFF,
+                    0xCFFFE, 0xCFFFF, 0xDFFFE, 0xDFFFF, 0xEFFFE, 0xEFFFF,
+                    0xFFFFE, 0xFFFFF, 0x10FFFE, 0x10FFFF])):
+                self.token_queue.append({
+                    "type": token_types["ParseError"],
+                    "data": "illegal-codepoint-for-numeric-entity",
+                    "datavars": {"integer": integer},
+                })
             try:
                 # Try/except needed as UCS-2 Python builds' unichar only works
                 # within the BMP.
-                char = chr(charAsInt)
+                replacement = chr(integer)
             except ValueError:
-                v = charAsInt - 0x10000
-                char = chr(0xD800 | (v >> 10)) + chr(0xDC00 | (v & 0x3FF))
+                value = integer - 0x10000
+                replacement = (
+                    chr(0xD800 | (value >> 10)) +
+                    chr(0xDC00 | (value & 0x3FF)))
 
         # Discard the ; if present. Otherwise, put it back on the queue and
         # invoke parseError on parser.
-        if c != ";":
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "numeric-entity-without-semicolon"})
-            self.stream.unget(c)
+        if character != ";":
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "numeric-entity-without-semicolon",
+            })
+            self.stream.unget(character)
 
-        return char
+        return replacement
 
-    def consumeEntity(self, allowedChar=None, fromAttribute=False):
-        # Initialise to the default output for when no entity is matched
+    def consume_entity(self, allowed=None, from_attribute=False):
+        # Initialise to the default output for when no entity is matched.
         output = "&"
 
-        charStack = [self.stream.char()]
-        if (charStack[0] in spaceCharacters or charStack[0] in (EOF, "<", "&") or
-                (allowedChar is not None and allowedChar == charStack[0])):
-            self.stream.unget(charStack[0])
+        stack = [self.stream.character()]
+        unget = (
+            stack[0] in space_characters or
+            stack[0] in (EOF, "<", "&") or
+            (allowed is not None and allowed == stack[0]))
+        if unget:
+            self.stream.unget(stack[0])
 
-        elif charStack[0] == "#":
-            # Read the next character to see if it's hex or decimal
+        elif stack[0] == "#":
+            # Read the next character to see if it's hex or decimal.
             hex = False
-            charStack.append(self.stream.char())
-            if charStack[-1] in ("x", "X"):
+            stack.append(self.stream.character())
+            if stack[-1] in ("x", "X"):
                 hex = True
-                charStack.append(self.stream.char())
+                stack.append(self.stream.character())
 
-            # charStack[-1] should be the first digit
-            if (hex and charStack[-1] in hexDigits) \
-                    or (not hex and charStack[-1] in digits):
-                # At least one digit found, so consume the whole number
-                self.stream.unget(charStack[-1])
-                output = self.consumeNumberEntity(hex)
+            # stack[-1] should be the first digit.
+            if (hex and stack[-1] in hex_digits) or (not hex and stack[-1] in digits):
+                # At least one digit found, so consume the whole number.
+                self.stream.unget(stack[-1])
+                output = self.consume_number_entity(hex)
             else:
-                # No digits found
-                self.tokenQueue.append({"type": tokenTypes["ParseError"],
-                                        "data": "expected-numeric-entity"})
-                self.stream.unget(charStack.pop())
-                output = "&" + "".join(charStack)
+                # No digits found.
+                self.token_queue.append({
+                    "type": token_types["ParseError"],
+                    "data": "expected-numeric-entity",
+                })
+                self.stream.unget(stack.pop())
+                output = f"&{''.join(stack)}"
 
         else:
             # At this point in the process might have named entity. Entities
-            # are stored in the global variable "entities".
-            #
-            # Consume characters and compare to these to a substring of the
-            # entity names in the list until the substring no longer matches.
-            while (charStack[-1] is not EOF):
-                if not entitiesTrie.has_keys_with_prefix("".join(charStack)):
+            # are stored in the global variable "entities". Consume characters
+            # and compare to these to a substring of the entity names in the
+            # list until the substring no longer matches.
+            while stack[-1] is not EOF:
+                if not entities_trie.has_keys_with_prefix("".join(stack)):
                     break
-                charStack.append(self.stream.char())
+                stack.append(self.stream.character())
 
             # At this point we have a string that starts with some characters
             # that may match an entity
             # Try to find the longest entity the string will match to take care
             # of &noti for instance.
             try:
-                entityName = entitiesTrie.longest_prefix("".join(charStack[:-1]))
-                entityLength = len(entityName)
+                entity_name = entities_trie.longest_prefix("".join(stack[:-1]))
+                entity_length = len(entity_name)
             except KeyError:
-                entityName = None
+                entity_name = None
 
-            if entityName is not None:
-                if entityName[-1] != ";":
-                    self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                            "named-entity-without-semicolon"})
-                if (entityName[-1] != ";" and fromAttribute and
-                    (charStack[entityLength] in asciiLetters or
-                     charStack[entityLength] in digits or
-                     charStack[entityLength] == "=")):
-                    self.stream.unget(charStack.pop())
-                    output = "&" + "".join(charStack)
+            if entity_name is not None:
+                if entity_name[-1] != ";":
+                    self.token_queue.append({
+                        "type": token_types["ParseError"],
+                        "data": "named-entity-without-semicolon",
+                    })
+                allowed_character = (
+                    stack[entity_length] in ascii_letters or
+                    stack[entity_length] in digits or
+                    stack[entity_length] == "=")
+                if entity_name[-1] != ";" and from_attribute and allowed_character:
+                    self.stream.unget(stack.pop())
+                    output = f"&{''.join(stack)}"
                 else:
-                    output = entities[entityName]
-                    self.stream.unget(charStack.pop())
-                    output += "".join(charStack[entityLength:])
+                    self.stream.unget(stack.pop())
+                    output = f"{entities[entity_name]}{''.join(stack[entity_length:])}"
             else:
-                self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                        "expected-named-entity"})
-                self.stream.unget(charStack.pop())
-                output = "&" + "".join(charStack)
+                self.token_queue.append({
+                    "type": token_types["ParseError"],
+                    "data": "expected-named-entity",
+                })
+                self.stream.unget(stack.pop())
+                output = f"&{''.join(stack)}"
 
-        if fromAttribute:
-            self.currentToken["data"][-1][1] += output
+        if from_attribute:
+            self.current_token["data"][-1][1] += output
         else:
-            if output in spaceCharacters:
-                tokenType = "SpaceCharacters"
+            if output in space_characters:
+                token_type = "SpaceCharacters"
             else:
-                tokenType = "Characters"
-            self.tokenQueue.append({"type": tokenTypes[tokenType], "data": output})
+                token_type = "Characters"
+            self.token_queue.append({"type": token_types[token_type], "data": output})
 
-    def processEntityInAttribute(self, allowedChar):
-        """This method replaces the need for "entityInAttributeValueState".
-        """
-        self.consumeEntity(allowedChar=allowedChar, fromAttribute=True)
+    def process_entity_in_attribute(self, allowed):
+        """Replace the need for entity_in_attribute_value_state."""
+        self.consume_entity(allowed=allowed, from_attribute=True)
 
-    def emitCurrentToken(self):
-        """This method is a generic handler for emitting the tags. It also sets
-        the state to "data" because that's what's needed after a token has been
-        emitted.
+    def emit_current_token(self):
+        """This method is a generic handler for emitting the tags.
+
+        It also sets the state to "data" because that's what's needed after a
+        token has been emitted.
+
         """
-        token = self.currentToken
-        # Add token to the queue to be yielded
-        if (token["type"] in tagTokenTypes):
-            token["name"] = token["name"].translate(asciiUpper2Lower)
-            if token["type"] == tokenTypes["StartTag"]:
+        token = self.current_token
+        # Add token to the queue to be yielded.
+        if token["type"] in tag_token_types:
+            token["name"] = token["name"].translate(ascii_upper_to_lower)
+            if token["type"] == token_types["StartTag"]:
                 raw = token["data"]
-                data = attributeMap(raw)
+                data = dict(raw)
                 if len(raw) > len(data):
-                    # we had some duplicated attribute, fix so first wins
+                    # We had some duplicated attribute, fix so first wins.
                     data.update(raw[::-1])
                 token["data"] = data
 
-            if token["type"] == tokenTypes["EndTag"]:
+            if token["type"] == token_types["EndTag"]:
                 if token["data"]:
-                    self.tokenQueue.append({"type": tokenTypes["ParseError"],
-                                            "data": "attributes-in-end-tag"})
+                    self.token_queue.append({
+                        "type": token_types["ParseError"],
+                        "data": "attributes-in-end-tag",
+                    })
                 if token["selfClosing"]:
-                    self.tokenQueue.append({"type": tokenTypes["ParseError"],
-                                            "data": "self-closing-flag-on-end-tag"})
-        self.tokenQueue.append(token)
-        self.state = self.dataState
+                    self.token_queue.append({
+                        "type": token_types["ParseError"],
+                        "data": "self-closing-flag-on-end-tag",
+                    })
+        self.token_queue.append(token)
+        self.state = self.data_state
 
     # Below are the various tokenizer states worked out.
-    def dataState(self):
-        data = self.stream.char()
+    def data_state(self):
+        data = self.stream.character()
         if data == "&":
-            self.state = self.entityDataState
+            self.state = self.entity_data_state
         elif data == "<":
-            self.state = self.tagOpenState
+            self.state = self.tag_open_state
         elif data == "\u0000":
-            self.tokenQueue.append({"type": tokenTypes["ParseError"],
-                                    "data": "invalid-codepoint"})
-            self.tokenQueue.append({"type": tokenTypes["Characters"],
-                                    "data": "\u0000"})
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "invalid-codepoint",
+            })
+            self.token_queue.append({
+                "type": token_types["Characters"],
+                "data": "\u0000",
+            })
         elif data is EOF:
-            # Tokenization ends.
             return False
-        elif data in spaceCharacters:
+        elif data in space_characters:
             # Directly after emitting a token you switch back to the "data
-            # state". At that point spaceCharacters are important so they are
+            # state". At that point space characters are important so they are
             # emitted separately.
-            self.tokenQueue.append({"type": tokenTypes["SpaceCharacters"], "data":
-                                    data + self.stream.charsUntil(spaceCharacters, True)})
+            self.token_queue.append({
+                "type": token_types["SpaceCharacters"],
+                "data": data + self.stream.chars_until(space_characters, True),
+            })
             # No need to update lastFourChars here, since the first space will
             # have already been appended to lastFourChars and will have broken
-            # any <!-- or --> sequences
+            # any <!-- or --> sequences.
         else:
-            chars = self.stream.charsUntil(("&", "<", "\u0000"))
-            self.tokenQueue.append({"type": tokenTypes["Characters"], "data":
-                                    data + chars})
+            characters = self.stream.chars_until(("&", "<", "\u0000"))
+            self.token_queue.append({
+                "type": token_types["Characters"],
+                "data": data + characters,
+            })
         return True
 
-    def entityDataState(self):
-        self.consumeEntity()
-        self.state = self.dataState
+    def entity_data_state(self):
+        self.consume_entity()
+        self.state = self.data_state
         return True
 
-    def rcdataState(self):
-        data = self.stream.char()
+    def rcdata_state(self):
+        data = self.stream.character()
         if data == "&":
-            self.state = self.characterReferenceInRcdata
+            self.state = self.character_reference_in_rc_data
         elif data == "<":
-            self.state = self.rcdataLessThanSignState
+            self.state = self.rcdata_less_than_sign_state
         elif data == EOF:
             # Tokenization ends.
             return False
         elif data == "\u0000":
-            self.tokenQueue.append({"type": tokenTypes["ParseError"],
-                                    "data": "invalid-codepoint"})
-            self.tokenQueue.append({"type": tokenTypes["Characters"],
-                                    "data": "\uFFFD"})
-        elif data in spaceCharacters:
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "invalid-codepoint",
+            })
+            self.token_queue.append({
+                "type": token_types["Characters"],
+                "data": "\uFFFD",
+            })
+        elif data in space_characters:
             # Directly after emitting a token you switch back to the "data
-            # state". At that point spaceCharacters are important so they are
+            # state". At that point space_characters are important so they are
             # emitted separately.
-            self.tokenQueue.append({"type": tokenTypes["SpaceCharacters"], "data":
-                                    data + self.stream.charsUntil(spaceCharacters, True)})
+            self.token_queue.append({
+                "type": token_types["SpaceCharacters"],
+                "data": data + self.stream.chars_until(space_characters, True),
+            })
             # No need to update lastFourChars here, since the first space will
             # have already been appended to lastFourChars and will have broken
-            # any <!-- or --> sequences
+            # any <!-- or --> sequences.
         else:
-            chars = self.stream.charsUntil(("&", "<", "\u0000"))
-            self.tokenQueue.append({"type": tokenTypes["Characters"], "data":
-                                    data + chars})
+            chars = self.stream.chars_until(("&", "<", "\u0000"))
+            self.token_queue.append({
+                "type": token_types["Characters"],
+                "data": data + chars,
+            })
         return True
 
-    def characterReferenceInRcdata(self):
-        self.consumeEntity()
-        self.state = self.rcdataState
+    def character_reference_in_rc_data(self):
+        self.consume_entity()
+        self.state = self.rcdata_state
         return True
 
-    def rawtextState(self):
-        data = self.stream.char()
+    def rawtext_state(self):
+        data = self.stream.character()
         if data == "<":
-            self.state = self.rawtextLessThanSignState
+            self.state = self.rawtext_less_than_sign_state
         elif data == "\u0000":
-            self.tokenQueue.append({"type": tokenTypes["ParseError"],
-                                    "data": "invalid-codepoint"})
-            self.tokenQueue.append({"type": tokenTypes["Characters"],
-                                    "data": "\uFFFD"})
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "invalid-codepoint",
+            })
+            self.token_queue.append({
+                "type": token_types["Characters"],
+                "data": "\uFFFD",
+            })
         elif data == EOF:
-            # Tokenization ends.
             return False
         else:
-            chars = self.stream.charsUntil(("<", "\u0000"))
-            self.tokenQueue.append({"type": tokenTypes["Characters"], "data":
-                                    data + chars})
+            characters = self.stream.chars_until(("<", "\u0000"))
+            self.token_queue.append({
+                "type": token_types["Characters"], "data":
+                data + characters,
+            })
         return True
 
-    def scriptDataState(self):
-        data = self.stream.char()
+    def script_data_state(self):
+        data = self.stream.character()
         if data == "<":
-            self.state = self.scriptDataLessThanSignState
+            self.state = self.script_data_less_than_sign_state
         elif data == "\u0000":
-            self.tokenQueue.append({"type": tokenTypes["ParseError"],
-                                    "data": "invalid-codepoint"})
-            self.tokenQueue.append({"type": tokenTypes["Characters"],
-                                    "data": "\uFFFD"})
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "invalid-codepoint",
+            })
+            self.token_queue.append({
+                "type": token_types["Characters"],
+                "data": "\uFFFD",
+            })
         elif data == EOF:
-            # Tokenization ends.
             return False
         else:
-            chars = self.stream.charsUntil(("<", "\u0000"))
-            self.tokenQueue.append({"type": tokenTypes["Characters"], "data":
-                                    data + chars})
+            characters = self.stream.chars_until(("<", "\u0000"))
+            self.token_queue.append({
+                "type": token_types["Characters"],
+                "data": data + characters,
+            })
         return True
 
-    def plaintextState(self):
-        data = self.stream.char()
+    def plaintext_state(self):
+        data = self.stream.character()
         if data == EOF:
-            # Tokenization ends.
             return False
         elif data == "\u0000":
-            self.tokenQueue.append({"type": tokenTypes["ParseError"],
-                                    "data": "invalid-codepoint"})
-            self.tokenQueue.append({"type": tokenTypes["Characters"],
-                                    "data": "\uFFFD"})
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "invalid-codepoint",
+            })
+            self.token_queue.append({
+                "type": token_types["Characters"],
+                "data": "\uFFFD",
+            })
         else:
-            self.tokenQueue.append({"type": tokenTypes["Characters"], "data":
-                                    data + self.stream.charsUntil("\u0000")})
+            self.token_queue.append({
+                "type": token_types["Characters"],
+                "data": data + self.stream.chars_until("\u0000"),
+            })
         return True
 
-    def tagOpenState(self):
-        data = self.stream.char()
+    def tag_open_state(self):
+        data = self.stream.character()
         if data == "!":
-            self.state = self.markupDeclarationOpenState
+            self.state = self.markup_declaration_open_state
         elif data == "/":
-            self.state = self.closeTagOpenState
-        elif data in asciiLetters:
-            self.currentToken = {"type": tokenTypes["StartTag"],
-                                 "name": data, "data": [],
-                                 "selfClosing": False,
-                                 "selfClosingAcknowledged": False}
-            self.state = self.tagNameState
+            self.state = self.close_tag_open_state
+        elif data in ascii_letters:
+            self.current_token = {
+                "type": token_types["StartTag"],
+                "name": data,
+                "data": [],
+                "selfClosing": False,
+                "selfClosingAcknowledged": False,
+            }
+            self.state = self.tag_name_state
         elif data == ">":
             # XXX In theory it could be something besides a tag name. But
             # do we really care?
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "expected-tag-name-but-got-right-bracket"})
-            self.tokenQueue.append({"type": tokenTypes["Characters"], "data": "<>"})
-            self.state = self.dataState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "expected-tag-name-but-got-right-bracket",
+            })
+            self.token_queue.append({"type": token_types["Characters"], "data": "<>"})
+            self.state = self.data_state
         elif data == "?":
             # XXX In theory it could be something besides a tag name. But
             # do we really care?
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "expected-tag-name-but-got-question-mark"})
+            self.token_queue.append({
+                "type": token_types["ParseError"], "data":
+                "expected-tag-name-but-got-question-mark",
+            })
             self.stream.unget(data)
-            self.state = self.bogusCommentState
+            self.state = self.bogus_comment_state
         else:
             # XXX
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "expected-tag-name"})
-            self.tokenQueue.append({"type": tokenTypes["Characters"], "data": "<"})
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "expected-tag-name",
+            })
+            self.token_queue.append({"type": token_types["Characters"], "data": "<"})
             self.stream.unget(data)
-            self.state = self.dataState
+            self.state = self.data_state
         return True
 
-    def closeTagOpenState(self):
-        data = self.stream.char()
-        if data in asciiLetters:
-            self.currentToken = {"type": tokenTypes["EndTag"], "name": data,
-                                 "data": [], "selfClosing": False}
-            self.state = self.tagNameState
+    def close_tag_open_state(self):
+        data = self.stream.character()
+        if data in ascii_letters:
+            self.current_token = {
+                "type": token_types["EndTag"],
+                "name": data,
+                "data": [],
+                "selfClosing": False,
+            }
+            self.state = self.tag_name_state
         elif data == ">":
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "expected-closing-tag-but-got-right-bracket"})
-            self.state = self.dataState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "expected-closing-tag-but-got-right-bracket",
+            })
+            self.state = self.data_state
         elif data is EOF:
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "expected-closing-tag-but-got-eof"})
-            self.tokenQueue.append({"type": tokenTypes["Characters"], "data": "</"})
-            self.state = self.dataState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "expected-closing-tag-but-got-eof",
+            })
+            self.token_queue.append({"type": token_types["Characters"], "data": "</"})
+            self.state = self.data_state
         else:
             # XXX data can be _'_...
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "expected-closing-tag-but-got-char",
-                                    "datavars": {"data": data}})
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "expected-closing-tag-but-got-char",
+                "datavars": {"data": data},
+            })
             self.stream.unget(data)
-            self.state = self.bogusCommentState
+            self.state = self.bogus_comment_state
         return True
 
-    def tagNameState(self):
-        data = self.stream.char()
-        if data in spaceCharacters:
-            self.state = self.beforeAttributeNameState
+    def tag_name_state(self):
+        data = self.stream.character()
+        if data in space_characters:
+            self.state = self.before_attribute_name_state
         elif data == ">":
-            self.emitCurrentToken()
+            self.emit_current_token()
         elif data is EOF:
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "eof-in-tag-name"})
-            self.state = self.dataState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "eof-in-tag-name",
+            })
+            self.state = self.data_state
         elif data == "/":
-            self.state = self.selfClosingStartTagState
+            self.state = self.self_closing_start_tag_state
         elif data == "\u0000":
-            self.tokenQueue.append({"type": tokenTypes["ParseError"],
-                                    "data": "invalid-codepoint"})
-            self.currentToken["name"] += "\uFFFD"
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "invalid-codepoint",
+            })
+            self.current_token["name"] += "\uFFFD"
         else:
-            self.currentToken["name"] += data
-            # (Don't use charsUntil here, because tag names are
-            # very short and it's faster to not do anything fancy)
+            self.current_token["name"] += data
+            # (Don't use chars_until here, because tag names are
+            # very short and it's faster to not do anything fancy.)
         return True
 
-    def rcdataLessThanSignState(self):
-        data = self.stream.char()
+    def rcdata_less_than_sign_state(self):
+        data = self.stream.character()
         if data == "/":
-            self.temporaryBuffer = ""
-            self.state = self.rcdataEndTagOpenState
+            self.temporary_buffer = ""
+            self.state = self.rcdata_end_tag_open_state
         else:
-            self.tokenQueue.append({"type": tokenTypes["Characters"], "data": "<"})
+            self.token_queue.append({"type": token_types["Characters"], "data": "<"})
             self.stream.unget(data)
-            self.state = self.rcdataState
+            self.state = self.rcdata_state
         return True
 
-    def rcdataEndTagOpenState(self):
-        data = self.stream.char()
-        if data in asciiLetters:
-            self.temporaryBuffer += data
-            self.state = self.rcdataEndTagNameState
+    def rcdata_end_tag_open_state(self):
+        data = self.stream.character()
+        if data in ascii_letters:
+            self.temporary_buffer += data
+            self.state = self.rcdata_end_tag_name_state
         else:
-            self.tokenQueue.append({"type": tokenTypes["Characters"], "data": "</"})
+            self.token_queue.append({"type": token_types["Characters"], "data": "</"})
             self.stream.unget(data)
-            self.state = self.rcdataState
+            self.state = self.rcdata_state
         return True
 
-    def rcdataEndTagNameState(self):
-        appropriate = self.currentToken and self.currentToken["name"].lower() == self.temporaryBuffer.lower()
-        data = self.stream.char()
-        if data in spaceCharacters and appropriate:
-            self.currentToken = {"type": tokenTypes["EndTag"],
-                                 "name": self.temporaryBuffer,
-                                 "data": [], "selfClosing": False}
-            self.state = self.beforeAttributeNameState
+    def rcdata_end_tag_name_state(self):
+        appropriate = (
+            self.current_token and
+            self.current_token["name"].lower() == self.temporary_buffer.lower())
+        data = self.stream.character()
+        if data in space_characters and appropriate:
+            self.current_token = {
+                "type": token_types["EndTag"],
+                "name": self.temporary_buffer,
+                "data": [],
+                "selfClosing": False,
+            }
+            self.state = self.before_attribute_name_state
         elif data == "/" and appropriate:
-            self.currentToken = {"type": tokenTypes["EndTag"],
-                                 "name": self.temporaryBuffer,
-                                 "data": [], "selfClosing": False}
-            self.state = self.selfClosingStartTagState
+            self.current_token = {
+                "type": token_types["EndTag"],
+                "name": self.temporary_buffer,
+                "data": [],
+                "selfClosing": False,
+            }
+            self.state = self.self_closing_start_tag_state
         elif data == ">" and appropriate:
-            self.currentToken = {"type": tokenTypes["EndTag"],
-                                 "name": self.temporaryBuffer,
-                                 "data": [], "selfClosing": False}
-            self.emitCurrentToken()
-            self.state = self.dataState
-        elif data in asciiLetters:
-            self.temporaryBuffer += data
+            self.current_token = {
+                "type": token_types["EndTag"],
+                "name": self.temporary_buffer,
+                "data": [],
+                "selfClosing": False,
+            }
+            self.emit_current_token()
+            self.state = self.data_state
+        elif data in ascii_letters:
+            self.temporary_buffer += data
         else:
-            self.tokenQueue.append({"type": tokenTypes["Characters"],
-                                    "data": "</" + self.temporaryBuffer})
+            self.token_queue.append({
+                "type": token_types["Characters"],
+                "data": f"</{self.temporary_buffer}",
+            })
             self.stream.unget(data)
-            self.state = self.rcdataState
+            self.state = self.rcdata_state
         return True
 
-    def rawtextLessThanSignState(self):
-        data = self.stream.char()
+    def rawtext_less_than_sign_state(self):
+        data = self.stream.character()
         if data == "/":
-            self.temporaryBuffer = ""
-            self.state = self.rawtextEndTagOpenState
+            self.temporary_buffer = ""
+            self.state = self.rawtext_end_tag_open_state
         else:
-            self.tokenQueue.append({"type": tokenTypes["Characters"], "data": "<"})
+            self.token_queue.append({"type": token_types["Characters"], "data": "<"})
             self.stream.unget(data)
-            self.state = self.rawtextState
+            self.state = self.rawtext_state
         return True
 
-    def rawtextEndTagOpenState(self):
-        data = self.stream.char()
-        if data in asciiLetters:
-            self.temporaryBuffer += data
-            self.state = self.rawtextEndTagNameState
+    def rawtext_end_tag_open_state(self):
+        data = self.stream.character()
+        if data in ascii_letters:
+            self.temporary_buffer += data
+            self.state = self.rawtext_end_tag_name_state
         else:
-            self.tokenQueue.append({"type": tokenTypes["Characters"], "data": "</"})
+            self.token_queue.append({"type": token_types["Characters"], "data": "</"})
             self.stream.unget(data)
-            self.state = self.rawtextState
+            self.state = self.rawtext_state
         return True
 
-    def rawtextEndTagNameState(self):
-        appropriate = self.currentToken and self.currentToken["name"].lower() == self.temporaryBuffer.lower()
-        data = self.stream.char()
-        if data in spaceCharacters and appropriate:
-            self.currentToken = {"type": tokenTypes["EndTag"],
-                                 "name": self.temporaryBuffer,
-                                 "data": [], "selfClosing": False}
-            self.state = self.beforeAttributeNameState
+    def rawtext_end_tag_name_state(self):
+        appropriate = (
+            self.current_token and
+            self.current_token["name"].lower() == self.temporary_buffer.lower())
+        data = self.stream.character()
+        if data in space_characters and appropriate:
+            self.current_token = {
+                "type": token_types["EndTag"],
+                "name": self.temporary_buffer,
+                "data": [],
+                "selfClosing": False,
+            }
+            self.state = self.before_attribute_name_state
         elif data == "/" and appropriate:
-            self.currentToken = {"type": tokenTypes["EndTag"],
-                                 "name": self.temporaryBuffer,
-                                 "data": [], "selfClosing": False}
-            self.state = self.selfClosingStartTagState
+            self.current_token = {
+                "type": token_types["EndTag"],
+                "name": self.temporary_buffer,
+                "data": [],
+                "selfClosing": False,
+            }
+            self.state = self.self_closing_start_tag_state
         elif data == ">" and appropriate:
-            self.currentToken = {"type": tokenTypes["EndTag"],
-                                 "name": self.temporaryBuffer,
-                                 "data": [], "selfClosing": False}
-            self.emitCurrentToken()
-            self.state = self.dataState
-        elif data in asciiLetters:
-            self.temporaryBuffer += data
+            self.current_token = {
+                "type": token_types["EndTag"],
+                "name": self.temporary_buffer,
+                "data": [],
+                "selfClosing": False,
+            }
+            self.emit_current_token()
+            self.state = self.data_state
+        elif data in ascii_letters:
+            self.temporary_buffer += data
         else:
-            self.tokenQueue.append({"type": tokenTypes["Characters"],
-                                    "data": "</" + self.temporaryBuffer})
+            self.token_queue.append({
+                "type": token_types["Characters"],
+                "data": f"</{self.temporary_buffer}"})
             self.stream.unget(data)
-            self.state = self.rawtextState
+            self.state = self.rawtext_state
         return True
 
-    def scriptDataLessThanSignState(self):
-        data = self.stream.char()
+    def script_data_less_than_sign_state(self):
+        data = self.stream.character()
         if data == "/":
-            self.temporaryBuffer = ""
-            self.state = self.scriptDataEndTagOpenState
+            self.temporary_buffer = ""
+            self.state = self.script_data_end_tag_open_state
         elif data == "!":
-            self.tokenQueue.append({"type": tokenTypes["Characters"], "data": "<!"})
-            self.state = self.scriptDataEscapeStartState
+            self.token_queue.append({"type": token_types["Characters"], "data": "<!"})
+            self.state = self.script_data_escape_start_state
         else:
-            self.tokenQueue.append({"type": tokenTypes["Characters"], "data": "<"})
+            self.token_queue.append({"type": token_types["Characters"], "data": "<"})
             self.stream.unget(data)
-            self.state = self.scriptDataState
+            self.state = self.script_data_state
         return True
 
-    def scriptDataEndTagOpenState(self):
-        data = self.stream.char()
-        if data in asciiLetters:
-            self.temporaryBuffer += data
-            self.state = self.scriptDataEndTagNameState
+    def script_data_end_tag_open_state(self):
+        data = self.stream.character()
+        if data in ascii_letters:
+            self.temporary_buffer += data
+            self.state = self.script_data_end_tag_name_state
         else:
-            self.tokenQueue.append({"type": tokenTypes["Characters"], "data": "</"})
+            self.token_queue.append({"type": token_types["Characters"], "data": "</"})
             self.stream.unget(data)
-            self.state = self.scriptDataState
+            self.state = self.script_data_state
         return True
 
-    def scriptDataEndTagNameState(self):
-        appropriate = self.currentToken and self.currentToken["name"].lower() == self.temporaryBuffer.lower()
-        data = self.stream.char()
-        if data in spaceCharacters and appropriate:
-            self.currentToken = {"type": tokenTypes["EndTag"],
-                                 "name": self.temporaryBuffer,
-                                 "data": [], "selfClosing": False}
-            self.state = self.beforeAttributeNameState
+    def script_data_end_tag_name_state(self):
+        appropriate = (
+            self.current_token and
+            self.current_token["name"].lower() == self.temporary_buffer.lower())
+        data = self.stream.character()
+        if data in space_characters and appropriate:
+            self.current_token = {
+                "type": token_types["EndTag"],
+                "name": self.temporary_buffer,
+                "data": [],
+                "selfClosing": False,
+            }
+            self.state = self.before_attribute_name_state
         elif data == "/" and appropriate:
-            self.currentToken = {"type": tokenTypes["EndTag"],
-                                 "name": self.temporaryBuffer,
-                                 "data": [], "selfClosing": False}
-            self.state = self.selfClosingStartTagState
+            self.current_token = {
+                "type": token_types["EndTag"],
+                "name": self.temporary_buffer,
+                "data": [],
+                "selfClosing": False,
+            }
+            self.state = self.self_closing_start_tag_state
         elif data == ">" and appropriate:
-            self.currentToken = {"type": tokenTypes["EndTag"],
-                                 "name": self.temporaryBuffer,
-                                 "data": [], "selfClosing": False}
-            self.emitCurrentToken()
-            self.state = self.dataState
-        elif data in asciiLetters:
-            self.temporaryBuffer += data
+            self.current_token = {
+                "type": token_types["EndTag"],
+                "name": self.temporary_buffer,
+                "data": [],
+                "selfClosing": False,
+            }
+            self.emit_current_token()
+            self.state = self.data_state
+        elif data in ascii_letters:
+            self.temporary_buffer += data
         else:
-            self.tokenQueue.append({"type": tokenTypes["Characters"],
-                                    "data": "</" + self.temporaryBuffer})
+            self.token_queue.append({
+                "type": token_types["Characters"],
+                "data": f"</{self.temporary_buffer}",
+            })
             self.stream.unget(data)
-            self.state = self.scriptDataState
+            self.state = self.script_data_state
         return True
 
-    def scriptDataEscapeStartState(self):
-        data = self.stream.char()
+    def script_data_escape_start_state(self):
+        data = self.stream.character()
         if data == "-":
-            self.tokenQueue.append({"type": tokenTypes["Characters"], "data": "-"})
-            self.state = self.scriptDataEscapeStartDashState
+            self.token_queue.append({"type": token_types["Characters"], "data": "-"})
+            self.state = self.script_data_escape_start_dash_state
         else:
             self.stream.unget(data)
-            self.state = self.scriptDataState
+            self.state = self.script_data_state
         return True
 
-    def scriptDataEscapeStartDashState(self):
-        data = self.stream.char()
+    def script_data_escape_start_dash_state(self):
+        data = self.stream.character()
         if data == "-":
-            self.tokenQueue.append({"type": tokenTypes["Characters"], "data": "-"})
-            self.state = self.scriptDataEscapedDashDashState
+            self.token_queue.append({"type": token_types["Characters"], "data": "-"})
+            self.state = self.script_data_escaped_dash_dash_state
         else:
             self.stream.unget(data)
-            self.state = self.scriptDataState
+            self.state = self.script_data_state
         return True
 
-    def scriptDataEscapedState(self):
-        data = self.stream.char()
+    def script_data_escaped_state(self):
+        data = self.stream.character()
         if data == "-":
-            self.tokenQueue.append({"type": tokenTypes["Characters"], "data": "-"})
-            self.state = self.scriptDataEscapedDashState
+            self.token_queue.append({"type": token_types["Characters"], "data": "-"})
+            self.state = self.script_data_escaped_dash_state
         elif data == "<":
-            self.state = self.scriptDataEscapedLessThanSignState
+            self.state = self.script_data_escaped_less_than_sign_state
         elif data == "\u0000":
-            self.tokenQueue.append({"type": tokenTypes["ParseError"],
-                                    "data": "invalid-codepoint"})
-            self.tokenQueue.append({"type": tokenTypes["Characters"],
-                                    "data": "\uFFFD"})
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "invalid-codepoint",
+            })
+            self.token_queue.append({
+                "type": token_types["Characters"],
+                "data": "\uFFFD",
+            })
         elif data == EOF:
-            self.state = self.dataState
+            self.state = self.data_state
         else:
-            chars = self.stream.charsUntil(("<", "-", "\u0000"))
-            self.tokenQueue.append({"type": tokenTypes["Characters"], "data":
-                                    data + chars})
+            chars = self.stream.chars_until(("<", "-", "\u0000"))
+            self.token_queue.append({
+                "type": token_types["Characters"],
+                "data": data + chars,
+            })
         return True
 
-    def scriptDataEscapedDashState(self):
-        data = self.stream.char()
+    def script_data_escaped_dash_state(self):
+        data = self.stream.character()
         if data == "-":
-            self.tokenQueue.append({"type": tokenTypes["Characters"], "data": "-"})
-            self.state = self.scriptDataEscapedDashDashState
+            self.token_queue.append({"type": token_types["Characters"], "data": "-"})
+            self.state = self.script_data_escaped_dash_dash_state
         elif data == "<":
-            self.state = self.scriptDataEscapedLessThanSignState
+            self.state = self.script_data_escaped_less_than_sign_state
         elif data == "\u0000":
-            self.tokenQueue.append({"type": tokenTypes["ParseError"],
-                                    "data": "invalid-codepoint"})
-            self.tokenQueue.append({"type": tokenTypes["Characters"],
-                                    "data": "\uFFFD"})
-            self.state = self.scriptDataEscapedState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "invalid-codepoint",
+            })
+            self.token_queue.append({
+                "type": token_types["Characters"],
+                "data": "\uFFFD",
+            })
+            self.state = self.script_data_escaped_state
         elif data == EOF:
-            self.state = self.dataState
+            self.state = self.data_state
         else:
-            self.tokenQueue.append({"type": tokenTypes["Characters"], "data": data})
-            self.state = self.scriptDataEscapedState
+            self.token_queue.append({"type": token_types["Characters"], "data": data})
+            self.state = self.script_data_escaped_state
         return True
 
-    def scriptDataEscapedDashDashState(self):
-        data = self.stream.char()
+    def script_data_escaped_dash_dash_state(self):
+        data = self.stream.character()
         if data == "-":
-            self.tokenQueue.append({"type": tokenTypes["Characters"], "data": "-"})
+            self.token_queue.append({"type": token_types["Characters"], "data": "-"})
         elif data == "<":
-            self.state = self.scriptDataEscapedLessThanSignState
+            self.state = self.script_data_escaped_less_than_sign_state
         elif data == ">":
-            self.tokenQueue.append({"type": tokenTypes["Characters"], "data": ">"})
-            self.state = self.scriptDataState
+            self.token_queue.append({"type": token_types["Characters"], "data": ">"})
+            self.state = self.script_data_state
         elif data == "\u0000":
-            self.tokenQueue.append({"type": tokenTypes["ParseError"],
-                                    "data": "invalid-codepoint"})
-            self.tokenQueue.append({"type": tokenTypes["Characters"],
-                                    "data": "\uFFFD"})
-            self.state = self.scriptDataEscapedState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "invalid-codepoint",
+            })
+            self.token_queue.append({
+                "type": token_types["Characters"],
+                "data": "\uFFFD",
+            })
+            self.state = self.script_data_escaped_state
         elif data == EOF:
-            self.state = self.dataState
+            self.state = self.data_state
         else:
-            self.tokenQueue.append({"type": tokenTypes["Characters"], "data": data})
-            self.state = self.scriptDataEscapedState
+            self.token_queue.append({
+                "type": token_types["Characters"],
+                "data": data,
+            })
+            self.state = self.script_data_escaped_state
         return True
 
-    def scriptDataEscapedLessThanSignState(self):
-        data = self.stream.char()
+    def script_data_escaped_less_than_sign_state(self):
+        data = self.stream.character()
         if data == "/":
-            self.temporaryBuffer = ""
-            self.state = self.scriptDataEscapedEndTagOpenState
-        elif data in asciiLetters:
-            self.tokenQueue.append({"type": tokenTypes["Characters"], "data": "<" + data})
-            self.temporaryBuffer = data
-            self.state = self.scriptDataDoubleEscapeStartState
+            self.temporary_buffer = ""
+            self.state = self.script_data_escaped_end_tag_open_state
+        elif data in ascii_letters:
+            self.token_queue.append({
+                "type": token_types["Characters"],
+                "data": f"<{data}",
+            })
+            self.temporary_buffer = data
+            self.state = self.script_data_double_escape_start_state
         else:
-            self.tokenQueue.append({"type": tokenTypes["Characters"], "data": "<"})
+            self.token_queue.append({"type": token_types["Characters"], "data": "<"})
             self.stream.unget(data)
-            self.state = self.scriptDataEscapedState
+            self.state = self.script_data_escaped_state
         return True
 
-    def scriptDataEscapedEndTagOpenState(self):
-        data = self.stream.char()
-        if data in asciiLetters:
-            self.temporaryBuffer = data
-            self.state = self.scriptDataEscapedEndTagNameState
+    def script_data_escaped_end_tag_open_state(self):
+        data = self.stream.character()
+        if data in ascii_letters:
+            self.temporary_buffer = data
+            self.state = self.script_data_escaped_end_tag_name_state
         else:
-            self.tokenQueue.append({"type": tokenTypes["Characters"], "data": "</"})
+            self.token_queue.append({"type": token_types["Characters"], "data": "</"})
             self.stream.unget(data)
-            self.state = self.scriptDataEscapedState
+            self.state = self.script_data_escaped_state
         return True
 
-    def scriptDataEscapedEndTagNameState(self):
-        appropriate = self.currentToken and self.currentToken["name"].lower() == self.temporaryBuffer.lower()
-        data = self.stream.char()
-        if data in spaceCharacters and appropriate:
-            self.currentToken = {"type": tokenTypes["EndTag"],
-                                 "name": self.temporaryBuffer,
-                                 "data": [], "selfClosing": False}
-            self.state = self.beforeAttributeNameState
+    def script_data_escaped_end_tag_name_state(self):
+        appropriate = (
+            self.current_token and
+            self.current_token["name"].lower() == self.temporary_buffer.lower())
+        data = self.stream.character()
+        if data in space_characters and appropriate:
+            self.current_token = {
+                "type": token_types["EndTag"],
+                "name": self.temporary_buffer,
+                "data": [],
+                "selfClosing": False,
+            }
+            self.state = self.before_attribute_name_state
         elif data == "/" and appropriate:
-            self.currentToken = {"type": tokenTypes["EndTag"],
-                                 "name": self.temporaryBuffer,
-                                 "data": [], "selfClosing": False}
-            self.state = self.selfClosingStartTagState
+            self.current_token = {
+                "type": token_types["EndTag"],
+                "name": self.temporary_buffer,
+                "data": [],
+                "selfClosing": False,
+            }
+            self.state = self.self_closing_start_tag_state
         elif data == ">" and appropriate:
-            self.currentToken = {"type": tokenTypes["EndTag"],
-                                 "name": self.temporaryBuffer,
-                                 "data": [], "selfClosing": False}
-            self.emitCurrentToken()
-            self.state = self.dataState
-        elif data in asciiLetters:
-            self.temporaryBuffer += data
+            self.current_token = {
+                "type": token_types["EndTag"],
+                "name": self.temporary_buffer,
+                "data": [],
+                "selfClosing": False,
+            }
+            self.emit_current_token()
+            self.state = self.data_state
+        elif data in ascii_letters:
+            self.temporary_buffer += data
         else:
-            self.tokenQueue.append({"type": tokenTypes["Characters"],
-                                    "data": "</" + self.temporaryBuffer})
+            self.token_queue.append({
+                "type": token_types["Characters"],
+                "data": f"</{self.temporary_buffer}",
+            })
             self.stream.unget(data)
-            self.state = self.scriptDataEscapedState
+            self.state = self.script_data_escaped_state
         return True
 
-    def scriptDataDoubleEscapeStartState(self):
-        data = self.stream.char()
-        if data in (spaceCharacters | frozenset(("/", ">"))):
-            self.tokenQueue.append({"type": tokenTypes["Characters"], "data": data})
-            if self.temporaryBuffer.lower() == "script":
-                self.state = self.scriptDataDoubleEscapedState
+    def script_data_double_escape_start_state(self):
+        data = self.stream.character()
+        if data in (space_characters | frozenset(("/", ">"))):
+            self.token_queue.append({"type": token_types["Characters"], "data": data})
+            if self.temporary_buffer.lower() == "script":
+                self.state = self.script_data_double_escaped_state
             else:
-                self.state = self.scriptDataEscapedState
-        elif data in asciiLetters:
-            self.tokenQueue.append({"type": tokenTypes["Characters"], "data": data})
-            self.temporaryBuffer += data
+                self.state = self.script_data_escaped_state
+        elif data in ascii_letters:
+            self.token_queue.append({"type": token_types["Characters"], "data": data})
+            self.temporary_buffer += data
         else:
             self.stream.unget(data)
-            self.state = self.scriptDataEscapedState
+            self.state = self.script_data_escaped_state
         return True
 
-    def scriptDataDoubleEscapedState(self):
-        data = self.stream.char()
+    def script_data_double_escaped_state(self):
+        data = self.stream.character()
         if data == "-":
-            self.tokenQueue.append({"type": tokenTypes["Characters"], "data": "-"})
-            self.state = self.scriptDataDoubleEscapedDashState
+            self.token_queue.append({"type": token_types["Characters"], "data": "-"})
+            self.state = self.script_data_double_escaped_dash_state
         elif data == "<":
-            self.tokenQueue.append({"type": tokenTypes["Characters"], "data": "<"})
-            self.state = self.scriptDataDoubleEscapedLessThanSignState
+            self.token_queue.append({"type": token_types["Characters"], "data": "<"})
+            self.state = self.script_data_double_escaped_less_than_sign_state
         elif data == "\u0000":
-            self.tokenQueue.append({"type": tokenTypes["ParseError"],
-                                    "data": "invalid-codepoint"})
-            self.tokenQueue.append({"type": tokenTypes["Characters"],
-                                    "data": "\uFFFD"})
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "invalid-codepoint",
+            })
+            self.token_queue.append({
+                "type": token_types["Characters"],
+                "data": "\uFFFD",
+            })
         elif data == EOF:
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "eof-in-script-in-script"})
-            self.state = self.dataState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "eof-in-script-in-script",
+            })
+            self.state = self.data_state
         else:
-            self.tokenQueue.append({"type": tokenTypes["Characters"], "data": data})
+            self.token_queue.append({"type": token_types["Characters"], "data": data})
         return True
 
-    def scriptDataDoubleEscapedDashState(self):
-        data = self.stream.char()
+    def script_data_double_escaped_dash_state(self):
+        data = self.stream.character()
         if data == "-":
-            self.tokenQueue.append({"type": tokenTypes["Characters"], "data": "-"})
-            self.state = self.scriptDataDoubleEscapedDashDashState
+            self.token_queue.append({"type": token_types["Characters"], "data": "-"})
+            self.state = self.script_data_double_escaped_dash_dash_state
         elif data == "<":
-            self.tokenQueue.append({"type": tokenTypes["Characters"], "data": "<"})
-            self.state = self.scriptDataDoubleEscapedLessThanSignState
+            self.token_queue.append({"type": token_types["Characters"], "data": "<"})
+            self.state = self.script_data_double_escaped_less_than_sign_state
         elif data == "\u0000":
-            self.tokenQueue.append({"type": tokenTypes["ParseError"],
-                                    "data": "invalid-codepoint"})
-            self.tokenQueue.append({"type": tokenTypes["Characters"],
-                                    "data": "\uFFFD"})
-            self.state = self.scriptDataDoubleEscapedState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "invalid-codepoint",
+            })
+            self.token_queue.append({
+                "type": token_types["Characters"],
+                "data": "\uFFFD",
+            })
+            self.state = self.script_data_double_escaped_state
         elif data == EOF:
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "eof-in-script-in-script"})
-            self.state = self.dataState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "eof-in-script-in-script",
+            })
+            self.state = self.data_state
         else:
-            self.tokenQueue.append({"type": tokenTypes["Characters"], "data": data})
-            self.state = self.scriptDataDoubleEscapedState
+            self.token_queue.append({"type": token_types["Characters"], "data": data})
+            self.state = self.script_data_double_escaped_state
         return True
 
-    def scriptDataDoubleEscapedDashDashState(self):
-        data = self.stream.char()
+    def script_data_double_escaped_dash_dash_state(self):
+        data = self.stream.character()
         if data == "-":
-            self.tokenQueue.append({"type": tokenTypes["Characters"], "data": "-"})
+            self.token_queue.append({"type": token_types["Characters"], "data": "-"})
         elif data == "<":
-            self.tokenQueue.append({"type": tokenTypes["Characters"], "data": "<"})
-            self.state = self.scriptDataDoubleEscapedLessThanSignState
+            self.token_queue.append({"type": token_types["Characters"], "data": "<"})
+            self.state = self.script_data_double_escaped_less_than_sign_state
         elif data == ">":
-            self.tokenQueue.append({"type": tokenTypes["Characters"], "data": ">"})
-            self.state = self.scriptDataState
+            self.token_queue.append({"type": token_types["Characters"], "data": ">"})
+            self.state = self.script_data_state
         elif data == "\u0000":
-            self.tokenQueue.append({"type": tokenTypes["ParseError"],
-                                    "data": "invalid-codepoint"})
-            self.tokenQueue.append({"type": tokenTypes["Characters"],
-                                    "data": "\uFFFD"})
-            self.state = self.scriptDataDoubleEscapedState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "invalid-codepoint",
+            })
+            self.token_queue.append({
+                "type": token_types["Characters"],
+                "data": "\uFFFD",
+            })
+            self.state = self.script_data_double_escaped_state
         elif data == EOF:
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "eof-in-script-in-script"})
-            self.state = self.dataState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "eof-in-script-in-script",
+            })
+            self.state = self.data_state
         else:
-            self.tokenQueue.append({"type": tokenTypes["Characters"], "data": data})
-            self.state = self.scriptDataDoubleEscapedState
+            self.token_queue.append({"type": token_types["Characters"], "data": data})
+            self.state = self.script_data_double_escaped_state
         return True
 
-    def scriptDataDoubleEscapedLessThanSignState(self):
-        data = self.stream.char()
+    def script_data_double_escaped_less_than_sign_state(self):
+        data = self.stream.character()
         if data == "/":
-            self.tokenQueue.append({"type": tokenTypes["Characters"], "data": "/"})
-            self.temporaryBuffer = ""
-            self.state = self.scriptDataDoubleEscapeEndState
+            self.token_queue.append({"type": token_types["Characters"], "data": "/"})
+            self.temporary_buffer = ""
+            self.state = self.script_data_double_escape_end_state
         else:
             self.stream.unget(data)
-            self.state = self.scriptDataDoubleEscapedState
+            self.state = self.script_data_double_escaped_state
         return True
 
-    def scriptDataDoubleEscapeEndState(self):
-        data = self.stream.char()
-        if data in (spaceCharacters | frozenset(("/", ">"))):
-            self.tokenQueue.append({"type": tokenTypes["Characters"], "data": data})
-            if self.temporaryBuffer.lower() == "script":
-                self.state = self.scriptDataEscapedState
+    def script_data_double_escape_end_state(self):
+        data = self.stream.character()
+        if data in (space_characters | frozenset(("/", ">"))):
+            self.token_queue.append({"type": token_types["Characters"], "data": data})
+            if self.temporary_buffer.lower() == "script":
+                self.state = self.script_data_escaped_state
             else:
-                self.state = self.scriptDataDoubleEscapedState
-        elif data in asciiLetters:
-            self.tokenQueue.append({"type": tokenTypes["Characters"], "data": data})
-            self.temporaryBuffer += data
+                self.state = self.script_data_double_escaped_state
+        elif data in ascii_letters:
+            self.token_queue.append({"type": token_types["Characters"], "data": data})
+            self.temporary_buffer += data
         else:
             self.stream.unget(data)
-            self.state = self.scriptDataDoubleEscapedState
+            self.state = self.script_data_double_escaped_state
         return True
 
-    def beforeAttributeNameState(self):
-        data = self.stream.char()
-        if data in spaceCharacters:
-            self.stream.charsUntil(spaceCharacters, True)
-        elif data in asciiLetters:
-            self.currentToken["data"].append([data, ""])
-            self.state = self.attributeNameState
+    def before_attribute_name_state(self):
+        data = self.stream.character()
+        if data in space_characters:
+            self.stream.chars_until(space_characters, True)
+        elif data in ascii_letters:
+            self.current_token["data"].append([data, ""])
+            self.state = self.attribute_name_state
         elif data == ">":
-            self.emitCurrentToken()
+            self.emit_current_token()
         elif data == "/":
-            self.state = self.selfClosingStartTagState
+            self.state = self.self_closing_start_tag_state
         elif data in ("'", '"', "=", "<"):
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "invalid-character-in-attribute-name"})
-            self.currentToken["data"].append([data, ""])
-            self.state = self.attributeNameState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "invalid-character-in-attribute-name",
+            })
+            self.current_token["data"].append([data, ""])
+            self.state = self.attribute_name_state
         elif data == "\u0000":
-            self.tokenQueue.append({"type": tokenTypes["ParseError"],
-                                    "data": "invalid-codepoint"})
-            self.currentToken["data"].append(["\uFFFD", ""])
-            self.state = self.attributeNameState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "invalid-codepoint",
+            })
+            self.current_token["data"].append(["\uFFFD", ""])
+            self.state = self.attribute_name_state
         elif data is EOF:
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "expected-attribute-name-but-got-eof"})
-            self.state = self.dataState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "expected-attribute-name-but-got-eof",
+            })
+            self.state = self.data_state
         else:
-            self.currentToken["data"].append([data, ""])
-            self.state = self.attributeNameState
+            self.current_token["data"].append([data, ""])
+            self.state = self.attribute_name_state
         return True
 
-    def attributeNameState(self):
-        data = self.stream.char()
-        leavingThisState = True
-        emitToken = False
+    def attribute_name_state(self):
+        data = self.stream.character()
+        leaving_this_state = True
+        emit_token = False
         if data == "=":
-            self.state = self.beforeAttributeValueState
-        elif data in asciiLetters:
-            self.currentToken["data"][-1][0] += data +\
-                self.stream.charsUntil(asciiLetters, True)
-            leavingThisState = False
+            self.state = self.before_attribute_value_state
+        elif data in ascii_letters:
+            self.current_token["data"][-1][0] += (
+                data + self.stream.chars_until(ascii_letters, True))
+            leaving_this_state = False
         elif data == ">":
             # XXX If we emit here the attributes are converted to a dict
             # without being checked and when the code below runs we error
-            # because data is a dict not a list
-            emitToken = True
-        elif data in spaceCharacters:
-            self.state = self.afterAttributeNameState
+            # because data is a dict not a list.
+            emit_token = True
+        elif data in space_characters:
+            self.state = self.after_attribute_name_state
         elif data == "/":
-            self.state = self.selfClosingStartTagState
+            self.state = self.self_closing_start_tag_state
         elif data == "\u0000":
-            self.tokenQueue.append({"type": tokenTypes["ParseError"],
-                                    "data": "invalid-codepoint"})
-            self.currentToken["data"][-1][0] += "\uFFFD"
-            leavingThisState = False
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "invalid-codepoint",
+            })
+            self.current_token["data"][-1][0] += "\uFFFD"
+            leaving_this_state = False
         elif data in ("'", '"', "<"):
-            self.tokenQueue.append({"type": tokenTypes["ParseError"],
+            self.token_queue.append({"type": token_types["ParseError"],
                                     "data":
                                     "invalid-character-in-attribute-name"})
-            self.currentToken["data"][-1][0] += data
-            leavingThisState = False
+            self.current_token["data"][-1][0] += data
+            leaving_this_state = False
         elif data is EOF:
-            self.tokenQueue.append({"type": tokenTypes["ParseError"],
-                                    "data": "eof-in-attribute-name"})
-            self.state = self.dataState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "eof-in-attribute-name",
+            })
+            self.state = self.data_state
         else:
-            self.currentToken["data"][-1][0] += data
-            leavingThisState = False
+            self.current_token["data"][-1][0] += data
+            leaving_this_state = False
 
-        if leavingThisState:
+        if leaving_this_state:
             # Attributes are not dropped at this stage. That happens when the
             # start tag token is emitted so values can still be safely appended
             # to attributes, but we do want to report the parse error in time.
-            self.currentToken["data"][-1][0] = (
-                self.currentToken["data"][-1][0].translate(asciiUpper2Lower))
-            for name, _ in self.currentToken["data"][:-1]:
-                if self.currentToken["data"][-1][0] == name:
-                    self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                            "duplicate-attribute"})
+            self.current_token["data"][-1][0] = (
+                self.current_token["data"][-1][0].translate(ascii_upper_to_lower))
+            for name, _ in self.current_token["data"][:-1]:
+                if self.current_token["data"][-1][0] == name:
+                    self.token_queue.append({
+                        "type": token_types["ParseError"],
+                        "data": "duplicate-attribute",
+                    })
                     break
-            # XXX Fix for above XXX
-            if emitToken:
-                self.emitCurrentToken()
+            # XXX Fix for above.
+            if emit_token:
+                self.emit_current_token()
         return True
 
-    def afterAttributeNameState(self):
-        data = self.stream.char()
-        if data in spaceCharacters:
-            self.stream.charsUntil(spaceCharacters, True)
+    def after_attribute_name_state(self):
+        data = self.stream.character()
+        if data in space_characters:
+            self.stream.chars_until(space_characters, True)
         elif data == "=":
-            self.state = self.beforeAttributeValueState
+            self.state = self.before_attribute_value_state
         elif data == ">":
-            self.emitCurrentToken()
-        elif data in asciiLetters:
-            self.currentToken["data"].append([data, ""])
-            self.state = self.attributeNameState
+            self.emit_current_token()
+        elif data in ascii_letters:
+            self.current_token["data"].append([data, ""])
+            self.state = self.attribute_name_state
         elif data == "/":
-            self.state = self.selfClosingStartTagState
+            self.state = self.self_closing_start_tag_state
         elif data == "\u0000":
-            self.tokenQueue.append({"type": tokenTypes["ParseError"],
-                                    "data": "invalid-codepoint"})
-            self.currentToken["data"].append(["\uFFFD", ""])
-            self.state = self.attributeNameState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "invalid-codepoint",
+            })
+            self.current_token["data"].append(["\uFFFD", ""])
+            self.state = self.attribute_name_state
         elif data in ("'", '"', "<"):
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "invalid-character-after-attribute-name"})
-            self.currentToken["data"].append([data, ""])
-            self.state = self.attributeNameState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "invalid-character-after-attribute-name",
+            })
+            self.current_token["data"].append([data, ""])
+            self.state = self.attribute_name_state
         elif data is EOF:
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "expected-end-of-tag-but-got-eof"})
-            self.state = self.dataState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "expected-end-of-tag-but-got-eof",
+            })
+            self.state = self.data_state
         else:
-            self.currentToken["data"].append([data, ""])
-            self.state = self.attributeNameState
+            self.current_token["data"].append([data, ""])
+            self.state = self.attribute_name_state
         return True
 
-    def beforeAttributeValueState(self):
-        data = self.stream.char()
-        if data in spaceCharacters:
-            self.stream.charsUntil(spaceCharacters, True)
+    def before_attribute_value_state(self):
+        data = self.stream.character()
+        if data in space_characters:
+            self.stream.chars_until(space_characters, True)
         elif data == "\"":
-            self.state = self.attributeValueDoubleQuotedState
+            self.state = self.attribute_value_double_quoted_state
         elif data == "&":
-            self.state = self.attributeValueUnQuotedState
+            self.state = self.attribute_value_unquoted_state
             self.stream.unget(data)
         elif data == "'":
-            self.state = self.attributeValueSingleQuotedState
+            self.state = self.attribute_value_single_quoted_state
         elif data == ">":
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "expected-attribute-value-but-got-right-bracket"})
-            self.emitCurrentToken()
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "expected-attribute-value-but-got-right-bracket",
+            })
+            self.emit_current_token()
         elif data == "\u0000":
-            self.tokenQueue.append({"type": tokenTypes["ParseError"],
-                                    "data": "invalid-codepoint"})
-            self.currentToken["data"][-1][1] += "\uFFFD"
-            self.state = self.attributeValueUnQuotedState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "invalid-codepoint",
+            })
+            self.current_token["data"][-1][1] += "\uFFFD"
+            self.state = self.attribute_value_unquoted_state
         elif data in ("=", "<", "`"):
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "equals-in-unquoted-attribute-value"})
-            self.currentToken["data"][-1][1] += data
-            self.state = self.attributeValueUnQuotedState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "equals-in-unquoted-attribute-value",
+            })
+            self.current_token["data"][-1][1] += data
+            self.state = self.attribute_value_unquoted_state
         elif data is EOF:
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "expected-attribute-value-but-got-eof"})
-            self.state = self.dataState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "expected-attribute-value-but-got-eof",
+            })
+            self.state = self.data_state
         else:
-            self.currentToken["data"][-1][1] += data
-            self.state = self.attributeValueUnQuotedState
+            self.current_token["data"][-1][1] += data
+            self.state = self.attribute_value_unquoted_state
         return True
 
-    def attributeValueDoubleQuotedState(self):
-        data = self.stream.char()
+    def attribute_value_double_quoted_state(self):
+        data = self.stream.character()
         if data == "\"":
-            self.state = self.afterAttributeValueState
+            self.state = self.after_attribute_value_state
         elif data == "&":
-            self.processEntityInAttribute('"')
+            self.process_entity_in_attribute('"')
         elif data == "\u0000":
-            self.tokenQueue.append({"type": tokenTypes["ParseError"],
-                                    "data": "invalid-codepoint"})
-            self.currentToken["data"][-1][1] += "\uFFFD"
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "invalid-codepoint",
+            })
+            self.current_token["data"][-1][1] += "\uFFFD"
         elif data is EOF:
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "eof-in-attribute-value-double-quote"})
-            self.state = self.dataState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "eof-in-attribute-value-double-quote",
+            })
+            self.state = self.data_state
         else:
-            self.currentToken["data"][-1][1] += data +\
-                self.stream.charsUntil(("\"", "&", "\u0000"))
+            self.current_token["data"][-1][1] += (
+                data + self.stream.chars_until(("\"", "&", "\u0000")))
         return True
 
-    def attributeValueSingleQuotedState(self):
-        data = self.stream.char()
+    def attribute_value_single_quoted_state(self):
+        data = self.stream.character()
         if data == "'":
-            self.state = self.afterAttributeValueState
+            self.state = self.after_attribute_value_state
         elif data == "&":
-            self.processEntityInAttribute("'")
+            self.process_entity_in_attribute("'")
         elif data == "\u0000":
-            self.tokenQueue.append({"type": tokenTypes["ParseError"],
-                                    "data": "invalid-codepoint"})
-            self.currentToken["data"][-1][1] += "\uFFFD"
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "invalid-codepoint",
+            })
+            self.current_token["data"][-1][1] += "\uFFFD"
         elif data is EOF:
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "eof-in-attribute-value-single-quote"})
-            self.state = self.dataState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "eof-in-attribute-value-single-quote",
+            })
+            self.state = self.data_state
         else:
-            self.currentToken["data"][-1][1] += data +\
-                self.stream.charsUntil(("'", "&", "\u0000"))
+            self.current_token["data"][-1][1] += (
+                data + self.stream.chars_until(("'", "&", "\u0000")))
         return True
 
-    def attributeValueUnQuotedState(self):
-        data = self.stream.char()
-        if data in spaceCharacters:
-            self.state = self.beforeAttributeNameState
+    def attribute_value_unquoted_state(self):
+        data = self.stream.character()
+        if data in space_characters:
+            self.state = self.before_attribute_name_state
         elif data == "&":
-            self.processEntityInAttribute(">")
+            self.process_entity_in_attribute(">")
         elif data == ">":
-            self.emitCurrentToken()
+            self.emit_current_token()
         elif data in ('"', "'", "=", "<", "`"):
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "unexpected-character-in-unquoted-attribute-value"})
-            self.currentToken["data"][-1][1] += data
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "unexpected-character-in-unquoted-attribute-value",
+            })
+            self.current_token["data"][-1][1] += data
         elif data == "\u0000":
-            self.tokenQueue.append({"type": tokenTypes["ParseError"],
-                                    "data": "invalid-codepoint"})
-            self.currentToken["data"][-1][1] += "\uFFFD"
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "invalid-codepoint",
+            })
+            self.current_token["data"][-1][1] += "\uFFFD"
         elif data is EOF:
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "eof-in-attribute-value-no-quotes"})
-            self.state = self.dataState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "eof-in-attribute-value-no-quotes",
+            })
+            self.state = self.data_state
         else:
-            self.currentToken["data"][-1][1] += data + self.stream.charsUntil(
-                frozenset(("&", ">", '"', "'", "=", "<", "`", "\u0000")) | spaceCharacters)
+            self.current_token["data"][-1][1] += (
+                data + self.stream.chars_until(
+                    frozenset(("&", ">", '"', "'", "=", "<", "`", "\u0000")) |
+                    space_characters))
         return True
 
-    def afterAttributeValueState(self):
-        data = self.stream.char()
-        if data in spaceCharacters:
-            self.state = self.beforeAttributeNameState
+    def after_attribute_value_state(self):
+        data = self.stream.character()
+        if data in space_characters:
+            self.state = self.before_attribute_name_state
         elif data == ">":
-            self.emitCurrentToken()
+            self.emit_current_token()
         elif data == "/":
-            self.state = self.selfClosingStartTagState
+            self.state = self.self_closing_start_tag_state
         elif data is EOF:
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "unexpected-EOF-after-attribute-value"})
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "unexpected-EOF-after-attribute-value",
+            })
             self.stream.unget(data)
-            self.state = self.dataState
+            self.state = self.data_state
         else:
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "unexpected-character-after-attribute-value"})
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "unexpected-character-after-attribute-value",
+            })
             self.stream.unget(data)
-            self.state = self.beforeAttributeNameState
+            self.state = self.before_attribute_name_state
         return True
 
-    def selfClosingStartTagState(self):
-        data = self.stream.char()
+    def self_closing_start_tag_state(self):
+        data = self.stream.character()
         if data == ">":
-            self.currentToken["selfClosing"] = True
-            self.emitCurrentToken()
+            self.current_token["selfClosing"] = True
+            self.emit_current_token()
         elif data is EOF:
-            self.tokenQueue.append({"type": tokenTypes["ParseError"],
-                                    "data":
-                                    "unexpected-EOF-after-solidus-in-tag"})
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "unexpected-EOF-after-solidus-in-tag",
+            })
             self.stream.unget(data)
-            self.state = self.dataState
+            self.state = self.data_state
         else:
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "unexpected-character-after-solidus-in-tag"})
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "unexpected-character-after-solidus-in-tag",
+            })
             self.stream.unget(data)
-            self.state = self.beforeAttributeNameState
+            self.state = self.before_attribute_name_state
         return True
 
-    def bogusCommentState(self):
+    def bogus_comment_state(self):
         # Make a new comment token and give it as value all the characters
-        # until the first > or EOF (charsUntil checks for EOF automatically)
+        # until the first > or EOF (chars_until checks for EOF automatically)
         # and emit it.
-        data = self.stream.charsUntil(">")
+        data = self.stream.chars_until(">")
         data = data.replace("\u0000", "\uFFFD")
-        self.tokenQueue.append(
-            {"type": tokenTypes["Comment"], "data": data})
+        self.token_queue.append({"type": token_types["Comment"], "data": data})
 
         # Eat the character directly after the bogus comment which is either a
         # ">" or an EOF.
-        self.stream.char()
-        self.state = self.dataState
+        self.stream.character()
+        self.state = self.data_state
         return True
 
-    def markupDeclarationOpenState(self):
-        charStack = [self.stream.char()]
-        if charStack[-1] == "-":
-            charStack.append(self.stream.char())
-            if charStack[-1] == "-":
-                self.currentToken = {"type": tokenTypes["Comment"], "data": ""}
-                self.state = self.commentStartState
+    def markup_declaration_open_state(self):
+        stack = [self.stream.character()]
+        if stack[-1] == "-":
+            stack.append(self.stream.character())
+            if stack[-1] == "-":
+                self.current_token = {"type": token_types["Comment"], "data": ""}
+                self.state = self.comment_start_state
                 return True
-        elif charStack[-1] in ('d', 'D'):
+        elif stack[-1] in ('d', 'D'):
             matched = True
             for expected in (('o', 'O'), ('c', 'C'), ('t', 'T'),
                              ('y', 'Y'), ('p', 'P'), ('e', 'E')):
-                charStack.append(self.stream.char())
-                if charStack[-1] not in expected:
+                stack.append(self.stream.character())
+                if stack[-1] not in expected:
                     matched = False
                     break
             if matched:
-                self.currentToken = {"type": tokenTypes["Doctype"],
-                                     "name": "",
-                                     "publicId": None, "systemId": None,
-                                     "correct": True}
-                self.state = self.doctypeState
+                self.current_token = {
+                    "type": token_types["Doctype"],
+                    "name": "",
+                    "publicId": None,
+                    "systemId": None,
+                    "correct": True,
+                }
+                self.state = self.doctype_state
                 return True
-        elif (charStack[-1] == "[" and
+        elif (stack[-1] == "[" and
               self.parser is not None and
-              self.parser.tree.openElements and
-              self.parser.tree.openElements[-1].namespace != self.parser.tree.defaultNamespace):
+              self.parser.tree.open_elements and
+              self.parser.tree.open_elements[-1].namespace !=
+              self.parser.tree.default_namespace):
             matched = True
-            for expected in ["C", "D", "A", "T", "A", "["]:
-                charStack.append(self.stream.char())
-                if charStack[-1] != expected:
+            for expected in ("C", "D", "A", "T", "A", "["):
+                stack.append(self.stream.character())
+                if stack[-1] != expected:
                     matched = False
                     break
             if matched:
-                self.state = self.cdataSectionState
+                self.state = self.cdata_section_state
                 return True
 
-        self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                "expected-dashes-or-doctype"})
+        self.token_queue.append({
+            "type": token_types["ParseError"],
+            "data": "expected-dashes-or-doctype",
+        })
 
-        while charStack:
-            self.stream.unget(charStack.pop())
-        self.state = self.bogusCommentState
+        while stack:
+            self.stream.unget(stack.pop())
+        self.state = self.bogus_comment_state
         return True
 
-    def commentStartState(self):
-        data = self.stream.char()
+    def comment_start_state(self):
+        data = self.stream.character()
         if data == "-":
-            self.state = self.commentStartDashState
+            self.state = self.comment_start_dash_state
         elif data == "\u0000":
-            self.tokenQueue.append({"type": tokenTypes["ParseError"],
-                                    "data": "invalid-codepoint"})
-            self.currentToken["data"] += "\uFFFD"
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "invalid-codepoint",
+            })
+            self.current_token["data"] += "\uFFFD"
         elif data == ">":
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "incorrect-comment"})
-            self.tokenQueue.append(self.currentToken)
-            self.state = self.dataState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "incorrect-comment",
+            })
+            self.token_queue.append(self.current_token)
+            self.state = self.data_state
         elif data is EOF:
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "eof-in-comment"})
-            self.tokenQueue.append(self.currentToken)
-            self.state = self.dataState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "eof-in-comment",
+            })
+            self.token_queue.append(self.current_token)
+            self.state = self.data_state
         else:
-            self.currentToken["data"] += data
-            self.state = self.commentState
+            self.current_token["data"] += data
+            self.state = self.comment_state
         return True
 
-    def commentStartDashState(self):
-        data = self.stream.char()
+    def comment_start_dash_state(self):
+        data = self.stream.character()
         if data == "-":
-            self.state = self.commentEndState
+            self.state = self.comment_end_state
         elif data == "\u0000":
-            self.tokenQueue.append({"type": tokenTypes["ParseError"],
-                                    "data": "invalid-codepoint"})
-            self.currentToken["data"] += "-\uFFFD"
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "invalid-codepoint",
+            })
+            self.current_token["data"] += "-\uFFFD"
         elif data == ">":
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "incorrect-comment"})
-            self.tokenQueue.append(self.currentToken)
-            self.state = self.dataState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "incorrect-comment",
+            })
+            self.token_queue.append(self.current_token)
+            self.state = self.data_state
         elif data is EOF:
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "eof-in-comment"})
-            self.tokenQueue.append(self.currentToken)
-            self.state = self.dataState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "eof-in-comment",
+            })
+            self.token_queue.append(self.current_token)
+            self.state = self.data_state
         else:
-            self.currentToken["data"] += "-" + data
-            self.state = self.commentState
+            self.current_token["data"] += "-" + data
+            self.state = self.comment_state
         return True
 
-    def commentState(self):
-        data = self.stream.char()
+    def comment_state(self):
+        data = self.stream.character()
         if data == "-":
-            self.state = self.commentEndDashState
+            self.state = self.comment_end_dash_state
         elif data == "\u0000":
-            self.tokenQueue.append({"type": tokenTypes["ParseError"],
-                                    "data": "invalid-codepoint"})
-            self.currentToken["data"] += "\uFFFD"
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "invalid-codepoint",
+            })
+            self.current_token["data"] += "\uFFFD"
         elif data is EOF:
-            self.tokenQueue.append({"type": tokenTypes["ParseError"],
-                                    "data": "eof-in-comment"})
-            self.tokenQueue.append(self.currentToken)
-            self.state = self.dataState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "eof-in-comment",
+            })
+            self.token_queue.append(self.current_token)
+            self.state = self.data_state
         else:
-            self.currentToken["data"] += data + \
-                self.stream.charsUntil(("-", "\u0000"))
+            self.current_token["data"] += (
+                data + self.stream.chars_until(("-", "\u0000")))
         return True
 
-    def commentEndDashState(self):
-        data = self.stream.char()
+    def comment_end_dash_state(self):
+        data = self.stream.character()
         if data == "-":
-            self.state = self.commentEndState
+            self.state = self.comment_end_state
         elif data == "\u0000":
-            self.tokenQueue.append({"type": tokenTypes["ParseError"],
-                                    "data": "invalid-codepoint"})
-            self.currentToken["data"] += "-\uFFFD"
-            self.state = self.commentState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "invalid-codepoint",
+            })
+            self.current_token["data"] += "-\uFFFD"
+            self.state = self.comment_state
         elif data is EOF:
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "eof-in-comment-end-dash"})
-            self.tokenQueue.append(self.currentToken)
-            self.state = self.dataState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "eof-in-comment-end-dash",
+            })
+            self.token_queue.append(self.current_token)
+            self.state = self.data_state
         else:
-            self.currentToken["data"] += "-" + data
-            self.state = self.commentState
+            self.current_token["data"] += "-" + data
+            self.state = self.comment_state
         return True
 
-    def commentEndState(self):
-        data = self.stream.char()
+    def comment_end_state(self):
+        data = self.stream.character()
         if data == ">":
-            self.tokenQueue.append(self.currentToken)
-            self.state = self.dataState
+            self.token_queue.append(self.current_token)
+            self.state = self.data_state
         elif data == "\u0000":
-            self.tokenQueue.append({"type": tokenTypes["ParseError"],
-                                    "data": "invalid-codepoint"})
-            self.currentToken["data"] += "--\uFFFD"
-            self.state = self.commentState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "invalid-codepoint",
+            })
+            self.current_token["data"] += "--\uFFFD"
+            self.state = self.comment_state
         elif data == "!":
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "unexpected-bang-after-double-dash-in-comment"})
-            self.state = self.commentEndBangState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "unexpected-bang-after-double-dash-in-comment",
+            })
+            self.state = self.comment_end_bang_state
         elif data == "-":
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "unexpected-dash-after-double-dash-in-comment"})
-            self.currentToken["data"] += data
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "unexpected-dash-after-double-dash-in-comment",
+            })
+            self.current_token["data"] += data
         elif data is EOF:
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "eof-in-comment-double-dash"})
-            self.tokenQueue.append(self.currentToken)
-            self.state = self.dataState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "eof-in-comment-double-dash",
+            })
+            self.token_queue.append(self.current_token)
+            self.state = self.data_state
         else:
             # XXX
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "unexpected-char-in-comment"})
-            self.currentToken["data"] += "--" + data
-            self.state = self.commentState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "unexpected-char-in-comment",
+            })
+            self.current_token["data"] += "--" + data
+            self.state = self.comment_state
         return True
 
-    def commentEndBangState(self):
-        data = self.stream.char()
+    def comment_end_bang_state(self):
+        data = self.stream.character()
         if data == ">":
-            self.tokenQueue.append(self.currentToken)
-            self.state = self.dataState
+            self.token_queue.append(self.current_token)
+            self.state = self.data_state
         elif data == "-":
-            self.currentToken["data"] += "--!"
-            self.state = self.commentEndDashState
+            self.current_token["data"] += "--!"
+            self.state = self.comment_end_dash_state
         elif data == "\u0000":
-            self.tokenQueue.append({"type": tokenTypes["ParseError"],
-                                    "data": "invalid-codepoint"})
-            self.currentToken["data"] += "--!\uFFFD"
-            self.state = self.commentState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "invalid-codepoint",
+            })
+            self.current_token["data"] += "--!\uFFFD"
+            self.state = self.comment_state
         elif data is EOF:
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "eof-in-comment-end-bang-state"})
-            self.tokenQueue.append(self.currentToken)
-            self.state = self.dataState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "eof-in-comment-end-bang-state",
+            })
+            self.token_queue.append(self.current_token)
+            self.state = self.data_state
         else:
-            self.currentToken["data"] += "--!" + data
-            self.state = self.commentState
+            self.current_token["data"] += f"--!{data}"
+            self.state = self.comment_state
         return True
 
-    def doctypeState(self):
-        data = self.stream.char()
-        if data in spaceCharacters:
-            self.state = self.beforeDoctypeNameState
+    def doctype_state(self):
+        data = self.stream.character()
+        if data in space_characters:
+            self.state = self.before_doctype_name_state
         elif data is EOF:
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "expected-doctype-name-but-got-eof"})
-            self.currentToken["correct"] = False
-            self.tokenQueue.append(self.currentToken)
-            self.state = self.dataState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "expected-doctype-name-but-got-eof",
+            })
+            self.current_token["correct"] = False
+            self.token_queue.append(self.current_token)
+            self.state = self.data_state
         else:
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "need-space-after-doctype"})
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "need-space-after-doctype",
+            })
             self.stream.unget(data)
-            self.state = self.beforeDoctypeNameState
+            self.state = self.before_doctype_name_state
         return True
 
-    def beforeDoctypeNameState(self):
-        data = self.stream.char()
-        if data in spaceCharacters:
+    def before_doctype_name_state(self):
+        data = self.stream.character()
+        if data in space_characters:
             pass
         elif data == ">":
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "expected-doctype-name-but-got-right-bracket"})
-            self.currentToken["correct"] = False
-            self.tokenQueue.append(self.currentToken)
-            self.state = self.dataState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "expected-doctype-name-but-got-right-bracket",
+            })
+            self.current_token["correct"] = False
+            self.token_queue.append(self.current_token)
+            self.state = self.data_state
         elif data == "\u0000":
-            self.tokenQueue.append({"type": tokenTypes["ParseError"],
-                                    "data": "invalid-codepoint"})
-            self.currentToken["name"] = "\uFFFD"
-            self.state = self.doctypeNameState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "invalid-codepoint",
+            })
+            self.current_token["name"] = "\uFFFD"
+            self.state = self.doctype_name_state
         elif data is EOF:
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "expected-doctype-name-but-got-eof"})
-            self.currentToken["correct"] = False
-            self.tokenQueue.append(self.currentToken)
-            self.state = self.dataState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "expected-doctype-name-but-got-eof",
+            })
+            self.current_token["correct"] = False
+            self.token_queue.append(self.current_token)
+            self.state = self.data_state
         else:
-            self.currentToken["name"] = data
-            self.state = self.doctypeNameState
+            self.current_token["name"] = data
+            self.state = self.doctype_name_state
         return True
 
-    def doctypeNameState(self):
-        data = self.stream.char()
-        if data in spaceCharacters:
-            self.currentToken["name"] = self.currentToken["name"].translate(asciiUpper2Lower)
-            self.state = self.afterDoctypeNameState
+    def doctype_name_state(self):
+        data = self.stream.character()
+        if data in space_characters:
+            self.current_token["name"] = self.current_token["name"].translate(
+                ascii_upper_to_lower)
+            self.state = self.after_doctype_name_state
         elif data == ">":
-            self.currentToken["name"] = self.currentToken["name"].translate(asciiUpper2Lower)
-            self.tokenQueue.append(self.currentToken)
-            self.state = self.dataState
+            self.current_token["name"] = self.current_token["name"].translate(
+                ascii_upper_to_lower)
+            self.token_queue.append(self.current_token)
+            self.state = self.data_state
         elif data == "\u0000":
-            self.tokenQueue.append({"type": tokenTypes["ParseError"],
-                                    "data": "invalid-codepoint"})
-            self.currentToken["name"] += "\uFFFD"
-            self.state = self.doctypeNameState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "invalid-codepoint",
+            })
+            self.current_token["name"] += "\uFFFD"
+            self.state = self.doctype_name_state
         elif data is EOF:
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "eof-in-doctype-name"})
-            self.currentToken["correct"] = False
-            self.currentToken["name"] = self.currentToken["name"].translate(asciiUpper2Lower)
-            self.tokenQueue.append(self.currentToken)
-            self.state = self.dataState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "eof-in-doctype-name",
+            })
+            self.current_token["correct"] = False
+            self.current_token["name"] = self.current_token["name"].translate(
+                ascii_upper_to_lower)
+            self.token_queue.append(self.current_token)
+            self.state = self.data_state
         else:
-            self.currentToken["name"] += data
+            self.current_token["name"] += data
         return True
 
-    def afterDoctypeNameState(self):
-        data = self.stream.char()
-        if data in spaceCharacters:
+    def after_doctype_name_state(self):
+        data = self.stream.character()
+        if data in space_characters:
             pass
         elif data == ">":
-            self.tokenQueue.append(self.currentToken)
-            self.state = self.dataState
+            self.token_queue.append(self.current_token)
+            self.state = self.data_state
         elif data is EOF:
-            self.currentToken["correct"] = False
+            self.current_token["correct"] = False
             self.stream.unget(data)
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "eof-in-doctype"})
-            self.tokenQueue.append(self.currentToken)
-            self.state = self.dataState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "eof-in-doctype",
+            })
+            self.token_queue.append(self.current_token)
+            self.state = self.data_state
         else:
             if data in ("p", "P"):
                 matched = True
                 for expected in (("u", "U"), ("b", "B"), ("l", "L"),
                                  ("i", "I"), ("c", "C")):
-                    data = self.stream.char()
+                    data = self.stream.character()
                     if data not in expected:
                         matched = False
                         break
                 if matched:
-                    self.state = self.afterDoctypePublicKeywordState
+                    self.state = self.after_doctype_public_keyword_state
                     return True
             elif data in ("s", "S"):
                 matched = True
                 for expected in (("y", "Y"), ("s", "S"), ("t", "T"),
                                  ("e", "E"), ("m", "M")):
-                    data = self.stream.char()
+                    data = self.stream.character()
                     if data not in expected:
                         matched = False
                         break
                 if matched:
-                    self.state = self.afterDoctypeSystemKeywordState
+                    self.state = self.after_doctype_system_keyword_state
                     return True
 
             # All the characters read before the current 'data' will be
@@ -1505,303 +1733,364 @@ class HTMLTokenizer(object):
             # discarded; only the latest character might be '>' or EOF
             # and needs to be ungetted
             self.stream.unget(data)
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "expected-space-or-right-bracket-in-doctype", "datavars":
-                                    {"data": data}})
-            self.currentToken["correct"] = False
-            self.state = self.bogusDoctypeState
-
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "expected-space-or-right-bracket-in-doctype",
+                "datavars": {"data": data},
+            })
+            self.current_token["correct"] = False
+            self.state = self.bogus_doctype_state
         return True
 
-    def afterDoctypePublicKeywordState(self):
-        data = self.stream.char()
-        if data in spaceCharacters:
-            self.state = self.beforeDoctypePublicIdentifierState
+    def after_doctype_public_keyword_state(self):
+        data = self.stream.character()
+        if data in space_characters:
+            self.state = self.before_doctype_public_identifier_state
         elif data in ("'", '"'):
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "unexpected-char-in-doctype"})
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "unexpected-char-in-doctype",
+            })
             self.stream.unget(data)
-            self.state = self.beforeDoctypePublicIdentifierState
+            self.state = self.before_doctype_public_identifier_state
         elif data is EOF:
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "eof-in-doctype"})
-            self.currentToken["correct"] = False
-            self.tokenQueue.append(self.currentToken)
-            self.state = self.dataState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "eof-in-doctype",
+            })
+            self.current_token["correct"] = False
+            self.token_queue.append(self.current_token)
+            self.state = self.data_state
         else:
             self.stream.unget(data)
-            self.state = self.beforeDoctypePublicIdentifierState
+            self.state = self.before_doctype_public_identifier_state
         return True
 
-    def beforeDoctypePublicIdentifierState(self):
-        data = self.stream.char()
-        if data in spaceCharacters:
+    def before_doctype_public_identifier_state(self):
+        data = self.stream.character()
+        if data in space_characters:
             pass
         elif data == "\"":
-            self.currentToken["publicId"] = ""
-            self.state = self.doctypePublicIdentifierDoubleQuotedState
+            self.current_token["publicId"] = ""
+            self.state = self.doctype_public_identifier_double_quoted_state
         elif data == "'":
-            self.currentToken["publicId"] = ""
-            self.state = self.doctypePublicIdentifierSingleQuotedState
+            self.current_token["publicId"] = ""
+            self.state = self.doctype_public_identifier_single_quoted_state
         elif data == ">":
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "unexpected-end-of-doctype"})
-            self.currentToken["correct"] = False
-            self.tokenQueue.append(self.currentToken)
-            self.state = self.dataState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "unexpected-end-of-doctype",
+            })
+            self.current_token["correct"] = False
+            self.token_queue.append(self.current_token)
+            self.state = self.data_state
         elif data is EOF:
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "eof-in-doctype"})
-            self.currentToken["correct"] = False
-            self.tokenQueue.append(self.currentToken)
-            self.state = self.dataState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "eof-in-doctype",
+            })
+            self.current_token["correct"] = False
+            self.token_queue.append(self.current_token)
+            self.state = self.data_state
         else:
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "unexpected-char-in-doctype"})
-            self.currentToken["correct"] = False
-            self.state = self.bogusDoctypeState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "unexpected-char-in-doctype",
+            })
+            self.current_token["correct"] = False
+            self.state = self.bogus_doctype_state
         return True
 
-    def doctypePublicIdentifierDoubleQuotedState(self):
-        data = self.stream.char()
-        if data == "\"":
-            self.state = self.afterDoctypePublicIdentifierState
+    def doctype_public_identifier_double_quoted_state(self):
+        data = self.stream.character()
+        if data == '"':
+            self.state = self.after_doctype_public_identifier_state
         elif data == "\u0000":
-            self.tokenQueue.append({"type": tokenTypes["ParseError"],
-                                    "data": "invalid-codepoint"})
-            self.currentToken["publicId"] += "\uFFFD"
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "invalid-codepoint",
+            })
+            self.current_token["publicId"] += "\uFFFD"
         elif data == ">":
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "unexpected-end-of-doctype"})
-            self.currentToken["correct"] = False
-            self.tokenQueue.append(self.currentToken)
-            self.state = self.dataState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "unexpected-end-of-doctype",
+            })
+            self.current_token["correct"] = False
+            self.token_queue.append(self.current_token)
+            self.state = self.data_state
         elif data is EOF:
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "eof-in-doctype"})
-            self.currentToken["correct"] = False
-            self.tokenQueue.append(self.currentToken)
-            self.state = self.dataState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "eof-in-doctype",
+            })
+            self.current_token["correct"] = False
+            self.token_queue.append(self.current_token)
+            self.state = self.data_state
         else:
-            self.currentToken["publicId"] += data
+            self.current_token["publicId"] += data
         return True
 
-    def doctypePublicIdentifierSingleQuotedState(self):
-        data = self.stream.char()
+    def doctype_public_identifier_single_quoted_state(self):
+        data = self.stream.character()
         if data == "'":
-            self.state = self.afterDoctypePublicIdentifierState
+            self.state = self.after_doctype_public_identifier_state
         elif data == "\u0000":
-            self.tokenQueue.append({"type": tokenTypes["ParseError"],
-                                    "data": "invalid-codepoint"})
-            self.currentToken["publicId"] += "\uFFFD"
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "invalid-codepoint",
+            })
+            self.current_token["publicId"] += "\uFFFD"
         elif data == ">":
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "unexpected-end-of-doctype"})
-            self.currentToken["correct"] = False
-            self.tokenQueue.append(self.currentToken)
-            self.state = self.dataState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "unexpected-end-of-doctype",
+            })
+            self.current_token["correct"] = False
+            self.token_queue.append(self.current_token)
+            self.state = self.data_state
         elif data is EOF:
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "eof-in-doctype"})
-            self.currentToken["correct"] = False
-            self.tokenQueue.append(self.currentToken)
-            self.state = self.dataState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "eof-in-doctype",
+            })
+            self.current_token["correct"] = False
+            self.token_queue.append(self.current_token)
+            self.state = self.data_state
         else:
-            self.currentToken["publicId"] += data
+            self.current_token["publicId"] += data
         return True
 
-    def afterDoctypePublicIdentifierState(self):
-        data = self.stream.char()
-        if data in spaceCharacters:
-            self.state = self.betweenDoctypePublicAndSystemIdentifiersState
+    def after_doctype_public_identifier_state(self):
+        data = self.stream.character()
+        if data in space_characters:
+            self.state = self.between_doctype_public_and_system_identifiers_state
         elif data == ">":
-            self.tokenQueue.append(self.currentToken)
-            self.state = self.dataState
+            self.token_queue.append(self.current_token)
+            self.state = self.data_state
         elif data == '"':
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "unexpected-char-in-doctype"})
-            self.currentToken["systemId"] = ""
-            self.state = self.doctypeSystemIdentifierDoubleQuotedState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "unexpected-char-in-doctype",
+            })
+            self.current_token["systemId"] = ""
+            self.state = self.doctype_system_identifier_double_quoted_state
         elif data == "'":
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "unexpected-char-in-doctype"})
-            self.currentToken["systemId"] = ""
-            self.state = self.doctypeSystemIdentifierSingleQuotedState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "unexpected-char-in-doctype",
+            })
+            self.current_token["systemId"] = ""
+            self.state = self.doctype_system_identifier_single_quoted_state
         elif data is EOF:
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "eof-in-doctype"})
-            self.currentToken["correct"] = False
-            self.tokenQueue.append(self.currentToken)
-            self.state = self.dataState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "eof-in-doctype",
+            })
+            self.current_token["correct"] = False
+            self.token_queue.append(self.current_token)
+            self.state = self.data_state
         else:
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "unexpected-char-in-doctype"})
-            self.currentToken["correct"] = False
-            self.state = self.bogusDoctypeState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "unexpected-char-in-doctype",
+            })
+            self.current_token["correct"] = False
+            self.state = self.bogus_doctype_state
         return True
 
-    def betweenDoctypePublicAndSystemIdentifiersState(self):
-        data = self.stream.char()
-        if data in spaceCharacters:
+    def between_doctype_public_and_system_identifiers_state(self):
+        data = self.stream.character()
+        if data in space_characters:
             pass
         elif data == ">":
-            self.tokenQueue.append(self.currentToken)
-            self.state = self.dataState
+            self.token_queue.append(self.current_token)
+            self.state = self.data_state
         elif data == '"':
-            self.currentToken["systemId"] = ""
-            self.state = self.doctypeSystemIdentifierDoubleQuotedState
+            self.current_token["systemId"] = ""
+            self.state = self.doctype_system_identifier_double_quoted_state
         elif data == "'":
-            self.currentToken["systemId"] = ""
-            self.state = self.doctypeSystemIdentifierSingleQuotedState
+            self.current_token["systemId"] = ""
+            self.state = self.doctype_system_identifier_single_quoted_state
         elif data == EOF:
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "eof-in-doctype"})
-            self.currentToken["correct"] = False
-            self.tokenQueue.append(self.currentToken)
-            self.state = self.dataState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "eof-in-doctype",
+            })
+            self.current_token["correct"] = False
+            self.token_queue.append(self.current_token)
+            self.state = self.data_state
         else:
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "unexpected-char-in-doctype"})
-            self.currentToken["correct"] = False
-            self.state = self.bogusDoctypeState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "unexpected-char-in-doctype",
+            })
+            self.current_token["correct"] = False
+            self.state = self.bogus_doctype_state
         return True
 
-    def afterDoctypeSystemKeywordState(self):
-        data = self.stream.char()
-        if data in spaceCharacters:
-            self.state = self.beforeDoctypeSystemIdentifierState
+    def after_doctype_system_keyword_state(self):
+        data = self.stream.character()
+        if data in space_characters:
+            self.state = self.before_doctype_system_identifier_state
         elif data in ("'", '"'):
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "unexpected-char-in-doctype"})
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "unexpected-char-in-doctype",
+            })
             self.stream.unget(data)
-            self.state = self.beforeDoctypeSystemIdentifierState
+            self.state = self.before_doctype_system_identifier_state
         elif data is EOF:
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "eof-in-doctype"})
-            self.currentToken["correct"] = False
-            self.tokenQueue.append(self.currentToken)
-            self.state = self.dataState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "eof-in-doctype",
+            })
+            self.current_token["correct"] = False
+            self.token_queue.append(self.current_token)
+            self.state = self.data_state
         else:
             self.stream.unget(data)
-            self.state = self.beforeDoctypeSystemIdentifierState
+            self.state = self.before_doctype_system_identifier_state
         return True
 
-    def beforeDoctypeSystemIdentifierState(self):
-        data = self.stream.char()
-        if data in spaceCharacters:
+    def before_doctype_system_identifier_state(self):
+        data = self.stream.character()
+        if data in space_characters:
             pass
-        elif data == "\"":
-            self.currentToken["systemId"] = ""
-            self.state = self.doctypeSystemIdentifierDoubleQuotedState
+        elif data == '"':
+            self.current_token["systemId"] = ""
+            self.state = self.doctype_system_identifier_double_quoted_state
         elif data == "'":
-            self.currentToken["systemId"] = ""
-            self.state = self.doctypeSystemIdentifierSingleQuotedState
+            self.current_token["systemId"] = ""
+            self.state = self.doctype_system_identifier_single_quoted_state
         elif data == ">":
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "unexpected-char-in-doctype"})
-            self.currentToken["correct"] = False
-            self.tokenQueue.append(self.currentToken)
-            self.state = self.dataState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "unexpected-char-in-doctype",
+            })
+            self.current_token["correct"] = False
+            self.token_queue.append(self.current_token)
+            self.state = self.data_state
         elif data is EOF:
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "eof-in-doctype"})
-            self.currentToken["correct"] = False
-            self.tokenQueue.append(self.currentToken)
-            self.state = self.dataState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "eof-in-doctype",
+            })
+            self.current_token["correct"] = False
+            self.token_queue.append(self.current_token)
+            self.state = self.data_state
         else:
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "unexpected-char-in-doctype"})
-            self.currentToken["correct"] = False
-            self.state = self.bogusDoctypeState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "unexpected-char-in-doctype",
+            })
+            self.current_token["correct"] = False
+            self.state = self.bogus_doctype_state
         return True
 
-    def doctypeSystemIdentifierDoubleQuotedState(self):
-        data = self.stream.char()
+    def doctype_system_identifier_double_quoted_state(self):
+        data = self.stream.character()
         if data == "\"":
-            self.state = self.afterDoctypeSystemIdentifierState
+            self.state = self.after_doctype_system_identifier_state
         elif data == "\u0000":
-            self.tokenQueue.append({"type": tokenTypes["ParseError"],
-                                    "data": "invalid-codepoint"})
-            self.currentToken["systemId"] += "\uFFFD"
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "invalid-codepoint",
+            })
+            self.current_token["systemId"] += "\uFFFD"
         elif data == ">":
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "unexpected-end-of-doctype"})
-            self.currentToken["correct"] = False
-            self.tokenQueue.append(self.currentToken)
-            self.state = self.dataState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "unexpected-end-of-doctype",
+            })
+            self.current_token["correct"] = False
+            self.token_queue.append(self.current_token)
+            self.state = self.data_state
         elif data is EOF:
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "eof-in-doctype"})
-            self.currentToken["correct"] = False
-            self.tokenQueue.append(self.currentToken)
-            self.state = self.dataState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "eof-in-doctype",
+            })
+            self.current_token["correct"] = False
+            self.token_queue.append(self.current_token)
+            self.state = self.data_state
         else:
-            self.currentToken["systemId"] += data
+            self.current_token["systemId"] += data
         return True
 
-    def doctypeSystemIdentifierSingleQuotedState(self):
-        data = self.stream.char()
+    def doctype_system_identifier_single_quoted_state(self):
+        data = self.stream.character()
         if data == "'":
-            self.state = self.afterDoctypeSystemIdentifierState
+            self.state = self.after_doctype_system_identifier_state
         elif data == "\u0000":
-            self.tokenQueue.append({"type": tokenTypes["ParseError"],
-                                    "data": "invalid-codepoint"})
-            self.currentToken["systemId"] += "\uFFFD"
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "invalid-codepoint",
+            })
+            self.current_token["systemId"] += "\uFFFD"
         elif data == ">":
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "unexpected-end-of-doctype"})
-            self.currentToken["correct"] = False
-            self.tokenQueue.append(self.currentToken)
-            self.state = self.dataState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "unexpected-end-of-doctype",
+            })
+            self.current_token["correct"] = False
+            self.token_queue.append(self.current_token)
+            self.state = self.data_state
         elif data is EOF:
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "eof-in-doctype"})
-            self.currentToken["correct"] = False
-            self.tokenQueue.append(self.currentToken)
-            self.state = self.dataState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "eof-in-doctype",
+            })
+            self.current_token["correct"] = False
+            self.token_queue.append(self.current_token)
+            self.state = self.data_state
         else:
-            self.currentToken["systemId"] += data
+            self.current_token["systemId"] += data
         return True
 
-    def afterDoctypeSystemIdentifierState(self):
-        data = self.stream.char()
-        if data in spaceCharacters:
+    def after_doctype_system_identifier_state(self):
+        data = self.stream.character()
+        if data in space_characters:
             pass
         elif data == ">":
-            self.tokenQueue.append(self.currentToken)
-            self.state = self.dataState
+            self.token_queue.append(self.current_token)
+            self.state = self.data_state
         elif data is EOF:
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "eof-in-doctype"})
-            self.currentToken["correct"] = False
-            self.tokenQueue.append(self.currentToken)
-            self.state = self.dataState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "eof-in-doctype",
+            })
+            self.current_token["correct"] = False
+            self.token_queue.append(self.current_token)
+            self.state = self.data_state
         else:
-            self.tokenQueue.append({"type": tokenTypes["ParseError"], "data":
-                                    "unexpected-char-in-doctype"})
-            self.state = self.bogusDoctypeState
+            self.token_queue.append({
+                "type": token_types["ParseError"],
+                "data": "unexpected-char-in-doctype",
+            })
+            self.state = self.bogus_doctype_state
         return True
 
-    def bogusDoctypeState(self):
-        data = self.stream.char()
+    def bogus_doctype_state(self):
+        data = self.stream.character()
         if data == ">":
-            self.tokenQueue.append(self.currentToken)
-            self.state = self.dataState
+            self.token_queue.append(self.current_token)
+            self.state = self.data_state
         elif data is EOF:
             # XXX EMIT
             self.stream.unget(data)
-            self.tokenQueue.append(self.currentToken)
-            self.state = self.dataState
+            self.token_queue.append(self.current_token)
+            self.state = self.data_state
         else:
             pass
         return True
 
-    def cdataSectionState(self):
+    def cdata_section_state(self):
         data = []
         while True:
-            data.append(self.stream.charsUntil("]"))
-            data.append(self.stream.charsUntil(">"))
-            char = self.stream.char()
+            data.append(self.stream.chars_until("]"))
+            data.append(self.stream.chars_until(">"))
+            char = self.stream.character()
             if char == EOF:
                 break
             else:
@@ -1812,16 +2101,19 @@ class HTMLTokenizer(object):
                 else:
                     data.append(char)
 
-        data = "".join(data)  # pylint:disable=redefined-variable-type
+        data = "".join(data)
         # Deal with null here rather than in the parser
-        nullCount = data.count("\u0000")
-        if nullCount > 0:
-            for _ in range(nullCount):
-                self.tokenQueue.append({"type": tokenTypes["ParseError"],
-                                        "data": "invalid-codepoint"})
+        if (null_count := data.count("\u0000")) > 0:
+            for _ in range(null_count):
+                self.token_queue.append({
+                    "type": token_types["ParseError"],
+                    "data": "invalid-codepoint",
+                })
             data = data.replace("\u0000", "\uFFFD")
         if data:
-            self.tokenQueue.append({"type": tokenTypes["Characters"],
-                                    "data": data})
-        self.state = self.dataState
+            self.token_queue.append({
+                "type": token_types["Characters"],
+                "data": data,
+            })
+        self.state = self.data_state
         return True
