@@ -202,8 +202,7 @@ class HTMLTokenizer:
 
         stack = [self.stream.character()]
         unget = (
-            stack[0] in space_characters or
-            stack[0] in (EOF, "<", "&") or
+            stack[0] in (EOF, "<", "&", *space_characters) or
             (allowed is not None and allowed == stack[0]))
         if unget:
             self.stream.unget(stack[0])
@@ -243,13 +242,14 @@ class HTMLTokenizer:
             # of &noti for instance.
             try:
                 entity_name = entities_trie.longest_prefix("".join(stack[:-1]))
-                entity_length = len(entity_name)
             except KeyError:
-                entity_name = None
-
-            if entity_name is not None:
+                self.parse_error("expected-named-entity")
+                self.stream.unget(stack.pop())
+                output = f"&{''.join(stack)}"
+            else:
                 if entity_name[-1] != ";":
                     self.parse_error("named-entity-without-semicolon")
+                entity_length = len(entity_name)
                 allowed_character = (
                     stack[entity_length] in ascii_letters or
                     stack[entity_length] in digits or
@@ -260,19 +260,12 @@ class HTMLTokenizer:
                 else:
                     self.stream.unget(stack.pop())
                     output = f"{entities[entity_name]}{''.join(stack[entity_length:])}"
-            else:
-                self.parse_error("expected-named-entity")
-                self.stream.unget(stack.pop())
-                output = f"&{''.join(stack)}"
 
         if from_attribute:
             self.current_token["data"][-1][1] += output
         else:
-            if output in space_characters:
-                token_type = "SpaceCharacters"
-            else:
-                token_type = "Characters"
-            self.token_queue.append({"type": token_types[token_type], "data": output})
+            type = "SpaceCharacters" if output in space_characters else "Characters"
+            self.token_queue.append({"type": token_types[type], "data": output})
 
     def process_entity_in_attribute(self, allowed):
         """Replace the need for entity_in_attribute_value_state."""
@@ -341,7 +334,7 @@ class HTMLTokenizer:
     def rcdata_state(self):
         data = self.stream.character()
         if data == "&":
-            self.state = self.character_reference_in_rc_data
+            self.state = self.character_reference_in_rc_data_state
         elif data == "<":
             self.state = self.rcdata_less_than_sign_state
         elif data == EOF:
@@ -366,7 +359,7 @@ class HTMLTokenizer:
             self.characters(data + chars)
         return True
 
-    def character_reference_in_rc_data(self):
+    def character_reference_in_rc_data_state(self):
         self.consume_entity()
         self.state = self.rcdata_state
         return True
@@ -1161,12 +1154,11 @@ class HTMLTokenizer:
                 self.current_token = {"type": token_types["Comment"], "data": ""}
                 self.state = self.comment_start_state
                 return True
-        elif stack[-1] in ('d', 'D'):
+        elif stack[-1] and stack[-1] in 'dD':
             matched = True
-            for expected in (('o', 'O'), ('c', 'C'), ('t', 'T'),
-                             ('y', 'Y'), ('p', 'P'), ('e', 'E')):
+            for expected in ('oO', 'cC', 'tT', 'yY', 'pP', 'eE'):
                 stack.append(self.stream.character())
-                if stack[-1] not in expected:
+                if not stack[-1] or stack[-1] not in expected:
                     matched = False
                     break
             if matched:
@@ -1185,9 +1177,9 @@ class HTMLTokenizer:
               self.parser.tree.open_elements[-1].namespace !=
               self.parser.tree.default_namespace):
             matched = True
-            for expected in ("C", "D", "A", "T", "A", "["):
+            for expected in "CDATA[":
                 stack.append(self.stream.character())
-                if stack[-1] != expected:
+                if not stack[-1] or stack[-1] != expected:
                     matched = False
                     break
             if matched:
@@ -1237,7 +1229,7 @@ class HTMLTokenizer:
             self.token_queue.append(self.current_token)
             self.state = self.data_state
         else:
-            self.current_token["data"] += "-" + data
+            self.current_token["data"] += f"-{data}"
             self.state = self.comment_state
         return True
 
@@ -1270,7 +1262,7 @@ class HTMLTokenizer:
             self.token_queue.append(self.current_token)
             self.state = self.data_state
         else:
-            self.current_token["data"] += "-" + data
+            self.current_token["data"] += f"-{data}"
             self.state = self.comment_state
         return True
 
@@ -1296,7 +1288,7 @@ class HTMLTokenizer:
         else:
             # XXX
             self.parse_error("unexpected-char-in-comment")
-            self.current_token["data"] += "--" + data
+            self.current_token["data"] += f"--{data}"
             self.state = self.comment_state
         return True
 
@@ -1362,12 +1354,12 @@ class HTMLTokenizer:
     def doctype_name_state(self):
         data = self.stream.character()
         if data in space_characters:
-            self.current_token["name"] = self.current_token["name"].translate(
-                ascii_upper_to_lower)
+            self.current_token["name"] = (
+                self.current_token["name"].translate(ascii_upper_to_lower))
             self.state = self.after_doctype_name_state
         elif data == ">":
-            self.current_token["name"] = self.current_token["name"].translate(
-                ascii_upper_to_lower)
+            self.current_token["name"] = (
+                self.current_token["name"].translate(ascii_upper_to_lower))
             self.token_queue.append(self.current_token)
             self.state = self.data_state
         elif data == "\u0000":
@@ -1377,8 +1369,8 @@ class HTMLTokenizer:
         elif data is EOF:
             self.parse_error("eof-in-doctype-name")
             self.current_token["correct"] = False
-            self.current_token["name"] = self.current_token["name"].translate(
-                ascii_upper_to_lower)
+            self.current_token["name"] = (
+                self.current_token["name"].translate(ascii_upper_to_lower))
             self.token_queue.append(self.current_token)
             self.state = self.data_state
         else:
@@ -1399,23 +1391,21 @@ class HTMLTokenizer:
             self.token_queue.append(self.current_token)
             self.state = self.data_state
         else:
-            if data in ("p", "P"):
+            if data and data in "pP":
                 matched = True
-                for expected in (("u", "U"), ("b", "B"), ("l", "L"),
-                                 ("i", "I"), ("c", "C")):
+                for expected in ("uU", "bB", "lL", "iI", "cC"):
                     data = self.stream.character()
-                    if data not in expected:
+                    if not data or data not in expected:
                         matched = False
                         break
                 if matched:
                     self.state = self.after_doctype_public_keyword_state
                     return True
-            elif data in ("s", "S"):
+            elif data and data in "sS":
                 matched = True
-                for expected in (("y", "Y"), ("s", "S"), ("t", "T"),
-                                 ("e", "E"), ("m", "M")):
+                for expected in ("yY", "sS", "tT", "eE", "mM"):
                     data = self.stream.character()
-                    if data not in expected:
+                    if not data or data not in expected:
                         matched = False
                         break
                 if matched:
@@ -1424,8 +1414,8 @@ class HTMLTokenizer:
 
             # All the characters read before the current 'data' will be
             # [a-zA-Z], so they're garbage in the bogus doctype and can be
-            # discarded; only the latest character might be '>' or EOF
-            # and needs to be ungetted
+            # discarded; only the latest character might be '>' or EOF and
+            # needs to be ungetted.
             self.stream.unget(data)
             self.parse_error("expected-space-or-right-bracket-in-doctype", data=data)
             self.current_token["correct"] = False
@@ -1702,7 +1692,7 @@ class HTMLTokenizer:
                     data.append(char)
 
         data = "".join(data)
-        # Deal with null here rather than in the parser
+        # Deal with null here rather than in the parser.
         if (null_count := data.count("\u0000")) > 0:
             for _ in range(null_count):
                 self.parse_error("invalid-codepoint")
