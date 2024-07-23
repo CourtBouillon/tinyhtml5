@@ -1,7 +1,6 @@
 from collections.abc import Mapping
 
-from . import _inputstream
-from ._tokenizer import HTMLTokenizer
+from . import inputstream
 from .constants import (
     E,
     ReparseError,
@@ -19,6 +18,7 @@ from .constants import (
     special_elements,
     token_types,
 )
+from .tokenizer import HTMLTokenizer
 from .treebuilder import Marker, TreeBuilder
 
 
@@ -742,8 +742,8 @@ class InHeadPhase(Phase):
                 # the abstract Unicode string, and just use the
                 # ContentAttributeParser on that, but using UTF-8 allows all chars
                 # to be encoded and as a ASCII-superset works.
-                data = _inputstream.EncodingBytes(attributes["content"].encode("utf-8"))
-                parser = _inputstream.ContentAttributeParser(data)
+                data = inputstream.EncodingBytes(attributes["content"].encode("utf-8"))
+                parser = inputstream.ContentAttributeParser(data)
                 codec = parser.parse()
                 self.parser.tokenizer.stream.change_encoding(codec)
 

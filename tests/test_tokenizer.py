@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from html5lib import constants
-from html5lib._tokenizer import HTMLTokenizer
+from html5lib.tokenizer import HTMLTokenizer
 
 
 class TokenizerTestParser:

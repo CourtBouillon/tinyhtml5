@@ -2,7 +2,6 @@ from bisect import bisect_left
 from collections import deque
 from collections.abc import Mapping
 
-from ._inputstream import HTMLInputStream
 from .constants import (
     EOF,
     ascii_letters,
@@ -15,6 +14,7 @@ from .constants import (
     tag_token_types,
     token_types,
 )
+from .inputstream import HTMLInputStream
 
 
 class Trie(Mapping):

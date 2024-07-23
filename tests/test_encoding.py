@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from html5lib._inputstream import HTMLBinaryInputStream
+from html5lib.inputstream import HTMLBinaryInputStream
 from html5lib.parser import HTMLParser
 
 from . import Data

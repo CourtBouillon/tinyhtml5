@@ -61,7 +61,7 @@ class BufferedStream:
         return pos
 
     def seek(self, pos):
-        assert pos <= self._bufferedBytes()
+        assert pos <= self._buffered_bytes()
         offset = pos
         i = 0
         while len(self.buffer[i]) < offset:
@@ -110,7 +110,7 @@ class BufferedStream:
             buffer_offset = 0
 
         if remaining_bytes:
-            rv.append(self._readStream(remaining_bytes))
+            rv.append(self._read_stream(remaining_bytes))
 
         return b"".join(rv)
 
