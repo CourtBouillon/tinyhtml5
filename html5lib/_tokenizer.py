@@ -131,6 +131,10 @@ class HTMLTokenizer:
             token["datavars"] = datavars
         self.token_queue.append(token)
 
+    def characters(self, _data):
+        """Add a characters string to the token queue."""
+        self.token_queue.append({"type": token_types["Characters"], "data": _data})
+
     def consume_number_entity(self, is_hex):
         """Return either U+FFFD or the character based on the representation.
 
@@ -310,10 +314,7 @@ class HTMLTokenizer:
             self.state = self.tag_open_state
         elif data == "\u0000":
             self.parse_error("invalid-codepoint")
-            self.token_queue.append({
-                "type": token_types["Characters"],
-                "data": "\u0000",
-            })
+            self.characters("\u0000")
         elif data is EOF:
             return False
         elif data in space_characters:
@@ -329,10 +330,7 @@ class HTMLTokenizer:
             # any <!-- or --> sequences.
         else:
             characters = self.stream.chars_until(("&", "<", "\u0000"))
-            self.token_queue.append({
-                "type": token_types["Characters"],
-                "data": data + characters,
-            })
+            self.characters(data + characters)
         return True
 
     def entity_data_state(self):
@@ -351,10 +349,7 @@ class HTMLTokenizer:
             return False
         elif data == "\u0000":
             self.parse_error("invalid-codepoint")
-            self.token_queue.append({
-                "type": token_types["Characters"],
-                "data": "\uFFFD",
-            })
+            self.characters("\uFFFD")
         elif data in space_characters:
             # Directly after emitting a token you switch back to the "data
             # state". At that point space_characters are important so they are
@@ -368,10 +363,7 @@ class HTMLTokenizer:
             # any <!-- or --> sequences.
         else:
             chars = self.stream.chars_until(("&", "<", "\u0000"))
-            self.token_queue.append({
-                "type": token_types["Characters"],
-                "data": data + chars,
-            })
+            self.characters(data + chars)
         return True
 
     def character_reference_in_rc_data(self):
@@ -385,18 +377,12 @@ class HTMLTokenizer:
             self.state = self.rawtext_less_than_sign_state
         elif data == "\u0000":
             self.parse_error("invalid-codepoint")
-            self.token_queue.append({
-                "type": token_types["Characters"],
-                "data": "\uFFFD",
-            })
+            self.characters("\uFFFD")
         elif data == EOF:
             return False
         else:
             characters = self.stream.chars_until(("<", "\u0000"))
-            self.token_queue.append({
-                "type": token_types["Characters"], "data":
-                data + characters,
-            })
+            self.characters(data + characters)
         return True
 
     def script_data_state(self):
@@ -405,18 +391,12 @@ class HTMLTokenizer:
             self.state = self.script_data_less_than_sign_state
         elif data == "\u0000":
             self.parse_error("invalid-codepoint")
-            self.token_queue.append({
-                "type": token_types["Characters"],
-                "data": "\uFFFD",
-            })
+            self.characters("\uFFFD")
         elif data == EOF:
             return False
         else:
             characters = self.stream.chars_until(("<", "\u0000"))
-            self.token_queue.append({
-                "type": token_types["Characters"],
-                "data": data + characters,
-            })
+            self.characters(data + characters)
         return True
 
     def plaintext_state(self):
@@ -425,15 +405,9 @@ class HTMLTokenizer:
             return False
         elif data == "\u0000":
             self.parse_error("invalid-codepoint")
-            self.token_queue.append({
-                "type": token_types["Characters"],
-                "data": "\uFFFD",
-            })
+            self.characters("\uFFFD")
         else:
-            self.token_queue.append({
-                "type": token_types["Characters"],
-                "data": data + self.stream.chars_until("\u0000"),
-            })
+            self.characters(data + self.stream.chars_until("\u0000"))
         return True
 
     def tag_open_state(self):
@@ -455,7 +429,7 @@ class HTMLTokenizer:
             # XXX In theory it could be something besides a tag name. But
             # do we really care?
             self.parse_error("expected-tag-name-but-got-right-bracket")
-            self.token_queue.append({"type": token_types["Characters"], "data": "<>"})
+            self.characters("<>")
             self.state = self.data_state
         elif data == "?":
             # XXX In theory it could be something besides a tag name. But
@@ -466,7 +440,7 @@ class HTMLTokenizer:
         else:
             # XXX
             self.parse_error("expected-tag-name")
-            self.token_queue.append({"type": token_types["Characters"], "data": "<"})
+            self.characters("<")
             self.stream.unget(data)
             self.state = self.data_state
         return True
@@ -486,7 +460,7 @@ class HTMLTokenizer:
             self.state = self.data_state
         elif data is EOF:
             self.parse_error("expected-closing-tag-but-got-eof")
-            self.token_queue.append({"type": token_types["Characters"], "data": "</"})
+            self.characters("</")
             self.state = self.data_state
         else:
             # XXX data can be _'_...
@@ -521,7 +495,7 @@ class HTMLTokenizer:
             self.temporary_buffer = ""
             self.state = self.rcdata_end_tag_open_state
         else:
-            self.token_queue.append({"type": token_types["Characters"], "data": "<"})
+            self.characters("<")
             self.stream.unget(data)
             self.state = self.rcdata_state
         return True
@@ -532,7 +506,7 @@ class HTMLTokenizer:
             self.temporary_buffer += data
             self.state = self.rcdata_end_tag_name_state
         else:
-            self.token_queue.append({"type": token_types["Characters"], "data": "</"})
+            self.characters("</")
             self.stream.unget(data)
             self.state = self.rcdata_state
         return True
@@ -570,10 +544,7 @@ class HTMLTokenizer:
         elif data in ascii_letters:
             self.temporary_buffer += data
         else:
-            self.token_queue.append({
-                "type": token_types["Characters"],
-                "data": f"</{self.temporary_buffer}",
-            })
+            self.characters(f"</{self.temporary_buffer}")
             self.stream.unget(data)
             self.state = self.rcdata_state
         return True
@@ -584,7 +555,7 @@ class HTMLTokenizer:
             self.temporary_buffer = ""
             self.state = self.rawtext_end_tag_open_state
         else:
-            self.token_queue.append({"type": token_types["Characters"], "data": "<"})
+            self.characters("<")
             self.stream.unget(data)
             self.state = self.rawtext_state
         return True
@@ -595,7 +566,7 @@ class HTMLTokenizer:
             self.temporary_buffer += data
             self.state = self.rawtext_end_tag_name_state
         else:
-            self.token_queue.append({"type": token_types["Characters"], "data": "</"})
+            self.characters("</")
             self.stream.unget(data)
             self.state = self.rawtext_state
         return True
@@ -633,9 +604,7 @@ class HTMLTokenizer:
         elif data in ascii_letters:
             self.temporary_buffer += data
         else:
-            self.token_queue.append({
-                "type": token_types["Characters"],
-                "data": f"</{self.temporary_buffer}"})
+            self.characters(f"</{self.temporary_buffer}")
             self.stream.unget(data)
             self.state = self.rawtext_state
         return True
@@ -646,10 +615,10 @@ class HTMLTokenizer:
             self.temporary_buffer = ""
             self.state = self.script_data_end_tag_open_state
         elif data == "!":
-            self.token_queue.append({"type": token_types["Characters"], "data": "<!"})
+            self.characters("<!")
             self.state = self.script_data_escape_start_state
         else:
-            self.token_queue.append({"type": token_types["Characters"], "data": "<"})
+            self.characters("<")
             self.stream.unget(data)
             self.state = self.script_data_state
         return True
@@ -660,7 +629,7 @@ class HTMLTokenizer:
             self.temporary_buffer += data
             self.state = self.script_data_end_tag_name_state
         else:
-            self.token_queue.append({"type": token_types["Characters"], "data": "</"})
+            self.characters("</")
             self.stream.unget(data)
             self.state = self.script_data_state
         return True
@@ -698,10 +667,7 @@ class HTMLTokenizer:
         elif data in ascii_letters:
             self.temporary_buffer += data
         else:
-            self.token_queue.append({
-                "type": token_types["Characters"],
-                "data": f"</{self.temporary_buffer}",
-            })
+            self.characters(f"</{self.temporary_buffer}")
             self.stream.unget(data)
             self.state = self.script_data_state
         return True
@@ -709,7 +675,7 @@ class HTMLTokenizer:
     def script_data_escape_start_state(self):
         data = self.stream.character()
         if data == "-":
-            self.token_queue.append({"type": token_types["Characters"], "data": "-"})
+            self.characters("-")
             self.state = self.script_data_escape_start_dash_state
         else:
             self.stream.unget(data)
@@ -719,7 +685,7 @@ class HTMLTokenizer:
     def script_data_escape_start_dash_state(self):
         data = self.stream.character()
         if data == "-":
-            self.token_queue.append({"type": token_types["Characters"], "data": "-"})
+            self.characters("-")
             self.state = self.script_data_escaped_dash_dash_state
         else:
             self.stream.unget(data)
@@ -729,70 +695,54 @@ class HTMLTokenizer:
     def script_data_escaped_state(self):
         data = self.stream.character()
         if data == "-":
-            self.token_queue.append({"type": token_types["Characters"], "data": "-"})
+            self.characters("-")
             self.state = self.script_data_escaped_dash_state
         elif data == "<":
             self.state = self.script_data_escaped_less_than_sign_state
         elif data == "\u0000":
             self.parse_error("invalid-codepoint")
-            self.token_queue.append({
-                "type": token_types["Characters"],
-                "data": "\uFFFD",
-            })
+            self.characters("\uFFFD")
         elif data == EOF:
             self.state = self.data_state
         else:
-            chars = self.stream.chars_until(("<", "-", "\u0000"))
-            self.token_queue.append({
-                "type": token_types["Characters"],
-                "data": data + chars,
-            })
+            self.characters(data + self.stream.chars_until(("<", "-", "\u0000")))
         return True
 
     def script_data_escaped_dash_state(self):
         data = self.stream.character()
         if data == "-":
-            self.token_queue.append({"type": token_types["Characters"], "data": "-"})
+            self.characters("-")
             self.state = self.script_data_escaped_dash_dash_state
         elif data == "<":
             self.state = self.script_data_escaped_less_than_sign_state
         elif data == "\u0000":
             self.parse_error("invalid-codepoint")
-            self.token_queue.append({
-                "type": token_types["Characters"],
-                "data": "\uFFFD",
-            })
+            self.characters("\uFFFD")
             self.state = self.script_data_escaped_state
         elif data == EOF:
             self.state = self.data_state
         else:
-            self.token_queue.append({"type": token_types["Characters"], "data": data})
+            self.characters(data)
             self.state = self.script_data_escaped_state
         return True
 
     def script_data_escaped_dash_dash_state(self):
         data = self.stream.character()
         if data == "-":
-            self.token_queue.append({"type": token_types["Characters"], "data": "-"})
+            self.characters("-")
         elif data == "<":
             self.state = self.script_data_escaped_less_than_sign_state
         elif data == ">":
-            self.token_queue.append({"type": token_types["Characters"], "data": ">"})
+            self.characters(">")
             self.state = self.script_data_state
         elif data == "\u0000":
             self.parse_error("invalid-codepoint")
-            self.token_queue.append({
-                "type": token_types["Characters"],
-                "data": "\uFFFD",
-            })
+            self.characters("\uFFFD")
             self.state = self.script_data_escaped_state
         elif data == EOF:
             self.state = self.data_state
         else:
-            self.token_queue.append({
-                "type": token_types["Characters"],
-                "data": data,
-            })
+            self.characters(data)
             self.state = self.script_data_escaped_state
         return True
 
@@ -802,14 +752,11 @@ class HTMLTokenizer:
             self.temporary_buffer = ""
             self.state = self.script_data_escaped_end_tag_open_state
         elif data in ascii_letters:
-            self.token_queue.append({
-                "type": token_types["Characters"],
-                "data": f"<{data}",
-            })
+            self.characters(f"<{data}")
             self.temporary_buffer = data
             self.state = self.script_data_double_escape_start_state
         else:
-            self.token_queue.append({"type": token_types["Characters"], "data": "<"})
+            self.characters("<")
             self.stream.unget(data)
             self.state = self.script_data_escaped_state
         return True
@@ -820,7 +767,7 @@ class HTMLTokenizer:
             self.temporary_buffer = data
             self.state = self.script_data_escaped_end_tag_name_state
         else:
-            self.token_queue.append({"type": token_types["Characters"], "data": "</"})
+            self.characters("</")
             self.stream.unget(data)
             self.state = self.script_data_escaped_state
         return True
@@ -858,10 +805,7 @@ class HTMLTokenizer:
         elif data in ascii_letters:
             self.temporary_buffer += data
         else:
-            self.token_queue.append({
-                "type": token_types["Characters"],
-                "data": f"</{self.temporary_buffer}",
-            })
+            self.characters(f"</{self.temporary_buffer}")
             self.stream.unget(data)
             self.state = self.script_data_escaped_state
         return True
@@ -869,13 +813,13 @@ class HTMLTokenizer:
     def script_data_double_escape_start_state(self):
         data = self.stream.character()
         if data in (space_characters | frozenset(("/", ">"))):
-            self.token_queue.append({"type": token_types["Characters"], "data": data})
+            self.characters(data)
             if self.temporary_buffer.lower() == "script":
                 self.state = self.script_data_double_escaped_state
             else:
                 self.state = self.script_data_escaped_state
         elif data in ascii_letters:
-            self.token_queue.append({"type": token_types["Characters"], "data": data})
+            self.characters(data)
             self.temporary_buffer += data
         else:
             self.stream.unget(data)
@@ -885,76 +829,67 @@ class HTMLTokenizer:
     def script_data_double_escaped_state(self):
         data = self.stream.character()
         if data == "-":
-            self.token_queue.append({"type": token_types["Characters"], "data": "-"})
+            self.characters("-")
             self.state = self.script_data_double_escaped_dash_state
         elif data == "<":
-            self.token_queue.append({"type": token_types["Characters"], "data": "<"})
+            self.characters("<")
             self.state = self.script_data_double_escaped_less_than_sign_state
         elif data == "\u0000":
             self.parse_error("invalid-codepoint")
-            self.token_queue.append({
-                "type": token_types["Characters"],
-                "data": "\uFFFD",
-            })
+            self.characters("\uFFFD")
         elif data == EOF:
             self.parse_error("eof-in-script-in-script")
             self.state = self.data_state
         else:
-            self.token_queue.append({"type": token_types["Characters"], "data": data})
+            self.characters(data)
         return True
 
     def script_data_double_escaped_dash_state(self):
         data = self.stream.character()
         if data == "-":
-            self.token_queue.append({"type": token_types["Characters"], "data": "-"})
+            self.characters("-")
             self.state = self.script_data_double_escaped_dash_dash_state
         elif data == "<":
-            self.token_queue.append({"type": token_types["Characters"], "data": "<"})
+            self.characters("<")
             self.state = self.script_data_double_escaped_less_than_sign_state
         elif data == "\u0000":
             self.parse_error("invalid-codepoint")
-            self.token_queue.append({
-                "type": token_types["Characters"],
-                "data": "\uFFFD",
-            })
+            self.characters("\uFFFD")
             self.state = self.script_data_double_escaped_state
         elif data == EOF:
             self.parse_error("eof-in-script-in-script")
             self.state = self.data_state
         else:
-            self.token_queue.append({"type": token_types["Characters"], "data": data})
+            self.characters(data)
             self.state = self.script_data_double_escaped_state
         return True
 
     def script_data_double_escaped_dash_dash_state(self):
         data = self.stream.character()
         if data == "-":
-            self.token_queue.append({"type": token_types["Characters"], "data": "-"})
+            self.characters("-")
         elif data == "<":
-            self.token_queue.append({"type": token_types["Characters"], "data": "<"})
+            self.characters("<")
             self.state = self.script_data_double_escaped_less_than_sign_state
         elif data == ">":
-            self.token_queue.append({"type": token_types["Characters"], "data": ">"})
+            self.characters(">")
             self.state = self.script_data_state
         elif data == "\u0000":
             self.parse_error("invalid-codepoint")
-            self.token_queue.append({
-                "type": token_types["Characters"],
-                "data": "\uFFFD",
-            })
+            self.characters("\uFFFD")
             self.state = self.script_data_double_escaped_state
         elif data == EOF:
             self.parse_error("eof-in-script-in-script")
             self.state = self.data_state
         else:
-            self.token_queue.append({"type": token_types["Characters"], "data": data})
+            self.characters(data)
             self.state = self.script_data_double_escaped_state
         return True
 
     def script_data_double_escaped_less_than_sign_state(self):
         data = self.stream.character()
         if data == "/":
-            self.token_queue.append({"type": token_types["Characters"], "data": "/"})
+            self.characters("/")
             self.temporary_buffer = ""
             self.state = self.script_data_double_escape_end_state
         else:
@@ -965,13 +900,13 @@ class HTMLTokenizer:
     def script_data_double_escape_end_state(self):
         data = self.stream.character()
         if data in (space_characters | frozenset(("/", ">"))):
-            self.token_queue.append({"type": token_types["Characters"], "data": data})
+            self.characters(data)
             if self.temporary_buffer.lower() == "script":
                 self.state = self.script_data_escaped_state
             else:
                 self.state = self.script_data_double_escaped_state
         elif data in ascii_letters:
-            self.token_queue.append({"type": token_types["Characters"], "data": data})
+            self.characters(data)
             self.temporary_buffer += data
         else:
             self.stream.unget(data)
@@ -1773,9 +1708,6 @@ class HTMLTokenizer:
                 self.parse_error("invalid-codepoint")
             data = data.replace("\u0000", "\uFFFD")
         if data:
-            self.token_queue.append({
-                "type": token_types["Characters"],
-                "data": data,
-            })
+            self.characters(data)
         self.state = self.data_state
         return True
