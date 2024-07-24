@@ -4,7 +4,6 @@ from io import BytesIO, StringIO
 from string import ascii_letters, ascii_uppercase
 
 import webencodings
-from chardet.universaldetector import UniversalDetector
 
 from .constants import EOF, ReparseError, space_characters
 
@@ -374,8 +373,6 @@ class HTMLBinaryInputStream(HTMLUnicodeInputStream):
         # Number of bytes to use when looking for a meta element with
         # encoding information.
         self.number_bytes_meta = 1024
-        # Number of bytes to use when using detecting encoding using chardet.
-        self.number_bytes_chardet = 100
         # Encodings given as arguments.
         self.override_encoding = override_encoding
         self.transport_encoding = transport_encoding
@@ -436,22 +433,6 @@ class HTMLBinaryInputStream(HTMLUnicodeInputStream):
         encoding = lookup_encoding(self.likely_encoding), "tentative"
         if encoding[0] is not None:
             return encoding
-
-        # Guess with chardet.
-        buffers = []
-        detector = UniversalDetector()
-        while not detector.done:
-            buffer = self.raw_stream.read(self.number_bytes_chardet)
-            assert isinstance(buffer, bytes)
-            if not buffer:
-                break
-            buffers.append(buffer)
-            detector.feed(buffer)
-        detector.close()
-        encoding = lookup_encoding(detector.result['encoding'])
-        self.raw_stream.seek(0)
-        if encoding is not None:
-            return encoding, "tentative"
 
         # Try the default encoding.
         encoding = lookup_encoding(self.default_encoding), "tentative"

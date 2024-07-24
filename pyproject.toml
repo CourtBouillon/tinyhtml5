@@ -13,7 +13,6 @@ readme = {file = 'README.rst', content-type = 'text/x-rst'}
 license = {file = 'LICENSE'}
 dependencies = [
   'webencodings >=0.5.1',
-  'chardet >=2.2.1',
 ]
 classifiers = [
   'Development Status :: 5 - Production/Stable',
