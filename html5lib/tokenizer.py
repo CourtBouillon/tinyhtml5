@@ -337,7 +337,7 @@ class HTMLTokenizer:
             self.state = self.character_reference_in_rc_data_state
         elif data == "<":
             self.state = self.rcdata_less_than_sign_state
-        elif data == EOF:
+        elif data is EOF:
             # Tokenization ends.
             return False
         elif data == "\u0000":
@@ -371,7 +371,7 @@ class HTMLTokenizer:
         elif data == "\u0000":
             self.parse_error("invalid-codepoint")
             self.characters("\uFFFD")
-        elif data == EOF:
+        elif data is EOF:
             return False
         else:
             characters = self.stream.chars_until(("<", "\u0000"))
@@ -385,7 +385,7 @@ class HTMLTokenizer:
         elif data == "\u0000":
             self.parse_error("invalid-codepoint")
             self.characters("\uFFFD")
-        elif data == EOF:
+        elif data is EOF:
             return False
         else:
             characters = self.stream.chars_until(("<", "\u0000"))
@@ -394,7 +394,7 @@ class HTMLTokenizer:
 
     def plaintext_state(self):
         data = self.stream.character()
-        if data == EOF:
+        if data is EOF:
             return False
         elif data == "\u0000":
             self.parse_error("invalid-codepoint")
@@ -695,7 +695,7 @@ class HTMLTokenizer:
         elif data == "\u0000":
             self.parse_error("invalid-codepoint")
             self.characters("\uFFFD")
-        elif data == EOF:
+        elif data is EOF:
             self.state = self.data_state
         else:
             self.characters(data + self.stream.chars_until(("<", "-", "\u0000")))
@@ -712,7 +712,7 @@ class HTMLTokenizer:
             self.parse_error("invalid-codepoint")
             self.characters("\uFFFD")
             self.state = self.script_data_escaped_state
-        elif data == EOF:
+        elif data is EOF:
             self.state = self.data_state
         else:
             self.characters(data)
@@ -732,7 +732,7 @@ class HTMLTokenizer:
             self.parse_error("invalid-codepoint")
             self.characters("\uFFFD")
             self.state = self.script_data_escaped_state
-        elif data == EOF:
+        elif data is EOF:
             self.state = self.data_state
         else:
             self.characters(data)
@@ -830,7 +830,7 @@ class HTMLTokenizer:
         elif data == "\u0000":
             self.parse_error("invalid-codepoint")
             self.characters("\uFFFD")
-        elif data == EOF:
+        elif data is EOF:
             self.parse_error("eof-in-script-in-script")
             self.state = self.data_state
         else:
@@ -849,7 +849,7 @@ class HTMLTokenizer:
             self.parse_error("invalid-codepoint")
             self.characters("\uFFFD")
             self.state = self.script_data_double_escaped_state
-        elif data == EOF:
+        elif data is EOF:
             self.parse_error("eof-in-script-in-script")
             self.state = self.data_state
         else:
@@ -871,7 +871,7 @@ class HTMLTokenizer:
             self.parse_error("invalid-codepoint")
             self.characters("\uFFFD")
             self.state = self.script_data_double_escaped_state
-        elif data == EOF:
+        elif data is EOF:
             self.parse_error("eof-in-script-in-script")
             self.state = self.data_state
         else:
@@ -1547,7 +1547,7 @@ class HTMLTokenizer:
         elif data == "'":
             self.current_token["systemId"] = ""
             self.state = self.doctype_system_identifier_single_quoted_state
-        elif data == EOF:
+        elif data is EOF:
             self.parse_error("eof-in-doctype")
             self.current_token["correct"] = False
             self.token_queue.append(self.current_token)
@@ -1681,7 +1681,7 @@ class HTMLTokenizer:
             data.append(self.stream.chars_until("]"))
             data.append(self.stream.chars_until(">"))
             char = self.stream.character()
-            if char == EOF:
+            if char is EOF:
                 break
             else:
                 assert char == ">"
