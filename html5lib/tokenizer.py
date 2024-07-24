@@ -1,14 +1,14 @@
 from bisect import bisect_left
 from collections import deque
 from collections.abc import Mapping
+from html.entities import html5 as entities
 
 from .constants import (
     EOF,
     ascii_letters,
     ascii_upper_to_lower,
     digits,
-    entities,
-    hex_digits,
+    hexdigits,
     replacement_characters,
     space_characters,
     tag_token_types,
@@ -142,7 +142,7 @@ class HTMLTokenizer:
         invoked.
 
         """
-        allowed = hex_digits if is_hex else digits
+        allowed = hexdigits if is_hex else digits
         radix = 16 if is_hex else 10
         stack = []
 
@@ -216,7 +216,7 @@ class HTMLTokenizer:
                 stack.append(self.stream.character())
 
             # stack[-1] should be the first digit.
-            if (hex and stack[-1] in hex_digits) or (not hex and stack[-1] in digits):
+            if stack[-1] in (hexdigits if hex else digits):
                 # At least one digit found, so consume the whole number.
                 self.stream.unget(stack[-1])
                 output = self.consume_number_entity(hex)

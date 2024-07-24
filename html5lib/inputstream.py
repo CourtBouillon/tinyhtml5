@@ -1,16 +1,17 @@
 import codecs
 import re
 from io import BytesIO, StringIO
+from string import ascii_letters, ascii_uppercase
 
 import webencodings
 from chardet.universaldetector import UniversalDetector
 
-from . import constants
+from .constants import EOF, ReparseError, space_characters
 
 # Non-unicode versions of constants for use in the pre-parser.
-space_characters_bytes = frozenset(item.encode() for item in constants.space_characters)
-ascii_letters_bytes = frozenset(item.encode() for item in constants.ascii_letters)
-ascii_uppercase_bytes = frozenset(item.encode() for item in constants.ascii_uppercase)
+space_characters_bytes = frozenset(item.encode() for item in space_characters)
+ascii_letters_bytes = frozenset(item.encode() for item in ascii_letters)
+ascii_uppercase_bytes = frozenset(item.encode() for item in ascii_uppercase)
 spaces_angle_brackets = space_characters_bytes | frozenset([b">", b"<"])
 
 invalid_unicode_no_surrogate = (
@@ -211,7 +212,7 @@ class HTMLUnicodeInputStream:
         # Read a new chunk from the input stream if necessary.
         if self.chunk_offset >= self.chunk_size:
             if not self.read_chunk():
-                return constants.EOF
+                return EOF
 
         chunk_offset = self.chunk_offset
         character = self.chunk[chunk_offset]
@@ -339,7 +340,7 @@ class HTMLUnicodeInputStream:
     def unget(self, char):
         # Only one character is allowed to be ungotten at once - it must be
         # consumed again before any further call to unget.
-        if char is not constants.EOF:
+        if char is not EOF:
             if self.chunk_offset == 0:
                 # unget is called quite rarely, so it's a good idea to do more
                 # work here if it saves a bit of work in the frequently called
@@ -473,7 +474,7 @@ class HTMLBinaryInputStream(HTMLUnicodeInputStream):
             self.raw_stream.seek(0)
             self.encoding = (new_encoding, "certain")
             self.reset()
-            raise constants.ReparseError(
+            raise ReparseError(
                 f"Encoding changed from {self.encoding[0]} to {new_encoding}")
 
     def detect_bom(self):

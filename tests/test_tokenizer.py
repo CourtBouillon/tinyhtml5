@@ -37,7 +37,7 @@ class TokenizerTestParser:
             "StartTag", token["name"], token["data"], token["selfClosing"]])
 
     def process_emptytag(self, token):
-        if token["name"] not in constants.voidElements:
+        if token["name"] not in constants.void_elements:
             self.output_tokens.append("ParseError")
         self.output_tokens.append([
             "StartTag", token["name"], dict(token["data"][::-1])])
