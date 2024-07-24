@@ -118,11 +118,11 @@ def test_tree_construction(id, test, namespace):
     parser = HTMLParser(namespace_html_elements=namespace)
 
     input = test['data']
-    fragment_container = test['document-fragment']
+    container = test['document-fragment']
     expected = '\n'.join(convert(test['document'].split('\n'), 2))
 
-    if fragment_container:
-        document = parser.parse_fragment(input, fragment_container)
+    if container:
+        document = parser.parse_fragment(input, container=container)
     else:
         document = parser.parse(input, full_tree=True)
 

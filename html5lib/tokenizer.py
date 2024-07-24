@@ -1108,7 +1108,7 @@ class HTMLTokenizer:
         elif data == "/":
             self.state = self.self_closing_start_tag_state
         elif data is EOF:
-            self.parse_error("unexpected-EOF-after-attribute-value")
+            self.parse_error("unexpected-eof-after-attribute-value")
             self.stream.unget(data)
             self.state = self.data_state
         else:
@@ -1123,7 +1123,7 @@ class HTMLTokenizer:
             self.current_token["selfClosing"] = True
             self.emit_current_token()
         elif data is EOF:
-            self.parse_error("unexpected-EOF-after-solidus-in-tag")
+            self.parse_error("unexpected-eof-after-solidus-in-tag")
             self.stream.unget(data)
             self.state = self.data_state
         else:

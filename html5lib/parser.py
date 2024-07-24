@@ -2,7 +2,6 @@ from collections.abc import Mapping
 
 from . import inputstream
 from .constants import (
-    E,
     ReparseError,
     adjust_foreign_attributes,
     adjust_mathml_attributes,
@@ -22,16 +21,12 @@ from .tokenizer import HTMLTokenizer
 from .treebuilder import Marker, TreeBuilder
 
 
-def parse(doc, strict=False, namespace_html_elements=True, debug=False, **kwargs):
+def parse(doc, namespace_html_elements=True, **kwargs):
     """Parse an HTML document as a string or file-like object into a tree
 
     :arg doc: the document to parse as a string or file-like object.
 
-    :arg strict: raise an exception when a parse error is encountered.
-
     :arg namespace_html_elements: whether or not to namespace HTML elements.
-
-    :arg debug: whether or not to enable debug mode which logs things.
 
     :returns: parsed tree.
 
@@ -42,7 +37,7 @@ def parse(doc, strict=False, namespace_html_elements=True, debug=False, **kwargs
     <Element u'{http://www.w3.org/1999/xhtml}html' at 0x7feac4909db0>
 
     """
-    parser = HTMLParser(strict, namespace_html_elements, debug)
+    parser = HTMLParser(namespace_html_elements)
     return parser.parse(doc, **kwargs)
 
 
@@ -53,30 +48,21 @@ class HTMLParser:
 
     """
 
-    def __init__(self, strict=False, namespace_html_elements=True, debug=False):
+    def __init__(self, namespace_html_elements=True):
         """Create HTML parser.
-
-        :arg strict: raise an exception when a parse error is encountered.
 
         :arg namespace_html_elements: whether or not to namespace HTML elements.
 
-        :arg debug: whether or not to enable debug mode which logs things.
-
         """
-        self.strict = strict
-        self.debug = debug
         self.tree = TreeBuilder(namespace_html_elements)
         self.errors = []
         self.phases = {name: cls(self, self.tree) for name, cls in _phases.items()}
 
-    def _parse(self, stream, inner_html=False, container="div", scripting=False,
-               **kwargs):
-        self.inner_html_mode = inner_html
+    def _parse(self, stream, container=None, scripting=False, **kwargs):
         self.container = container
         self.scripting = scripting
         self.tokenizer = HTMLTokenizer(stream, parser=self, **kwargs)
         self.reset()
-
         try:
             self.main_loop()
         except ReparseError:
@@ -87,17 +73,14 @@ class HTMLParser:
         self.tree.reset()
         self.first_start_tag = False
         self.errors = []
-        self.log = []  # only used with debug mode
         self.compatibility_mode = "no quirks"  # or "quirks" or "limited quirks"
 
-        if self.inner_html_mode:
-            self.inner_html = self.container.lower()
-
-            if self.inner_html in cdata_elements:
+        if self.container:
+            if self.container in cdata_elements:
                 self.tokenizer.state = self.tokenizer.rcdata_state
-            elif self.inner_html in rcdata_elements:
+            elif self.container in rcdata_elements:
                 self.tokenizer.state = self.tokenizer.rawtext_state
-            elif self.inner_html == 'plaintext':
+            elif self.container == 'plaintext':
                 self.tokenizer.state = self.tokenizer.plaintext_state
             else:
                 # State already is data state.
@@ -107,7 +90,6 @@ class HTMLParser:
             self.phase._insert_html_element()
             self.reset_insertion_mode()
         else:
-            self.inner_html = False
             self.phase = self.phases["initial"]
 
         self.last_phase = None
@@ -148,9 +130,6 @@ class HTMLParser:
         doctype_token = token_types["Doctype"]
         parse_error_token = token_types["ParseError"]
 
-        type_names = {value: key for key, value in token_types.items()}
-        debug = self.debug
-
         for token in self.tokenizer:
             previous_token = None
             new_token = token
@@ -185,18 +164,6 @@ class HTMLParser:
                     else:
                         phase = self.phases["inForeignContent"]
 
-                    if debug:
-                        info = {"type": type_names[type]}
-                        if type in (start_tag_token, end_tag_token):
-                            info["name"] = new_token['name']
-
-                        self.log.append((
-                            self.tokenizer.state.__name__,
-                            self.phase.__class__.__name__,
-                            phase.__class__.__name__,
-                            f"process{info['type']}",
-                            info))
-
                     if type == characters_token:
                         new_token = phase.process_characters(new_token)
                     elif type == space_characters_token:
@@ -225,7 +192,7 @@ class HTMLParser:
             if reprocess:
                 assert self.phase not in phases
 
-    def parse(self, stream, full_tree=False, *args, **kwargs):
+    def parse(self, stream, full_tree=False, **kwargs):
         """Parse a HTML document into a well-formed tree.
 
         :arg stream: file-like object or string containing HTML to be parsed.
@@ -235,7 +202,7 @@ class HTMLParser:
             regardless of any BOM or later declaration (such as in a meta
             element).
 
-        :arg scripting: treat noscript elements as if JavaScript was turned on.
+        :arg full_tree: return the whole tree instead of the root html tag.
 
         :returns: parsed tree.
 
@@ -247,10 +214,10 @@ class HTMLParser:
         <Element u'{http://www.w3.org/1999/xhtml}html' at 0x7feac4909db0>
 
         """
-        self._parse(stream, False, None, *args, **kwargs)
+        self._parse(stream, **kwargs)
         return self.tree.get_document(full_tree)
 
-    def parse_fragment(self, stream, *args, **kwargs):
+    def parse_fragment(self, stream, container="div", **kwargs):
         """Parse a HTML fragment into a well-formed tree fragment.
 
         :arg stream: file-like object or string containing HTML to be parsed.
@@ -259,6 +226,8 @@ class HTMLParser:
             the encoding. If specified, that encoding will be used,
             regardless of any BOM or later declaration (such as in a meta
             element).
+
+        :arg container: tag name of the fragment’s container.
 
         :returns: parsed fragment.
 
@@ -270,7 +239,7 @@ class HTMLParser:
         <Element u'DOCUMENT_FRAGMENT' at 0x7feac484b090>
 
         """
-        self._parse(stream, True, *args, **kwargs)
+        self._parse(stream, container=container, **kwargs)
         return self.tree.get_fragment()
 
     def parse_error(self, errorcode="XXX-undefined-error", datavars=None):
@@ -278,8 +247,6 @@ class HTMLParser:
         if datavars is None:
             datavars = {}
         self.errors.append((self.tokenizer.stream.position(), errorcode, datavars))
-        if self.strict:
-            raise ParseError(E[errorcode] % datavars)
 
     def adjust_mathml_attributes(self, token):
         adjust_attributes(token, adjust_mathml_attributes)
@@ -317,13 +284,13 @@ class HTMLParser:
             node_name = node.name
             new_phase = None
             if node == self.tree.open_elements[0]:
-                assert self.inner_html
+                assert self.container
                 last = True
-                node_name = self.inner_html
-            # Check for conditions that should only happen in the inner_html
+                node_name = self.container
+            # Check for conditions that should only happen in the fragment
             # case.
             if node_name in ("select", "colgroup", "head", "html"):
-                assert self.inner_html
+                assert self.container
 
             if not last and node.namespace != self.tree.default_namespace:
                 continue
@@ -1017,7 +984,7 @@ class InBodyPhase(Phase):
         self.parser.parse_error("unexpected-start-tag", {"name": "body"})
         if (len(self.tree.open_elements) == 1 or
                 self.tree.open_elements[1].name != "body"):
-            assert self.parser.inner_html
+            assert self.parser.container
         else:
             self.parser.frameset_ok = False
             for attr, value in token["data"].items():
@@ -1028,7 +995,7 @@ class InBodyPhase(Phase):
         self.parser.parse_error("unexpected-start-tag", {"name": "frameset"})
         if (len(self.tree.open_elements) == 1 or
                 self.tree.open_elements[1].name != "body"):
-            assert self.parser.inner_html
+            assert self.parser.container
         elif not self.parser.frameset_ok:
             pass
         else:
@@ -1708,13 +1675,13 @@ class InTablePhase(Phase):
             # self.parser.parse_error("unexpected-implied-end-tag-in-table",
             #  {"name":  self.tree.open_elements[-1].name})
             self.tree.open_elements.pop()
-        # When the current node is <html> it's an inner_html case.
+        # When the current node is <html> it's a fragment case.
 
     def process_eof(self):
         if self.tree.open_elements[-1].name != "html":
             self.parser.parse_error("eof-in-table")
         else:
-            assert self.parser.inner_html
+            assert self.parser.container
         # Stop parsing.
 
     def process_space_characters(self, token):
@@ -1765,7 +1732,7 @@ class InTablePhase(Phase):
             "unexpected-start-tag-implies-end-tag",
             {"startName": "table", "endName": "table"})
         self.parser.phase.process_end_tag(implied_tag_token("table"))
-        if not self.parser.inner_html:
+        if not self.parser.container:
             return token
 
     def start_tag_style_script(self, token):
@@ -1808,8 +1775,8 @@ class InTablePhase(Phase):
             self.tree.open_elements.pop()
             self.parser.reset_insertion_mode()
         else:
-            # inner_html case.
-            assert self.parser.inner_html
+            # fragment case.
+            assert self.parser.container
             self.parser.parse_error()
 
     def end_tag_ignore(self, token):
@@ -1931,8 +1898,8 @@ class InCaptionPhase(Phase):
             self.tree.clear_active_formatting_elements()
             self.parser.phase = self.parser.phases["inTable"]
         else:
-            # inner_html case.
-            assert self.parser.inner_html
+            # fragment case.
+            assert self.parser.container
             self.parser.parse_error()
 
     def end_tag_table(self, token):
@@ -1973,7 +1940,7 @@ class InColumnGroupPhase(Phase):
 
     def process_eof(self):
         if self.tree.open_elements[-1].name == "html":
-            assert self.parser.inner_html
+            assert self.parser.container
             return
         else:
             ignore_end_tag = self.ignore_end_tag_colgroup()
@@ -2000,8 +1967,8 @@ class InColumnGroupPhase(Phase):
 
     def end_tag_colgroup(self, token):
         if self.ignore_end_tag_colgroup():
-            # inner_html case
-            assert self.parser.inner_html
+            # fragment case
+            assert self.parser.container
             self.parser.parse_error()
         else:
             self.tree.open_elements.pop()
@@ -2040,7 +2007,7 @@ class InTableBodyPhase(Phase):
             #  {"name": self.tree.open_elements[-1].name})
             self.tree.open_elements.pop()
         if self.tree.open_elements[-1].name == "html":
-            assert self.parser.inner_html
+            assert self.parser.container
 
     def process_eof(self):
         self.parser.phases["inTable"].process_eof()
@@ -2072,8 +2039,8 @@ class InTableBodyPhase(Phase):
                 implied_tag_token(self.tree.open_elements[-1].name))
             return token
         else:
-            # inner_html case.
-            assert self.parser.inner_html
+            # fragment case.
+            assert self.parser.container
             self.parser.parse_error()
 
     def start_tag_other(self, token):
@@ -2097,8 +2064,8 @@ class InTableBodyPhase(Phase):
                 implied_tag_token(self.tree.open_elements[-1].name))
             return token
         else:
-            # inner_html case.
-            assert self.parser.inner_html
+            # fragment case.
+            assert self.parser.container
             self.parser.parse_error()
 
     def end_tag_ignore(self, token):
@@ -2158,7 +2125,7 @@ class InRowPhase(Phase):
     def start_tag_table_other(self, token):
         ignore_end_tag = self.ignore_end_tag_tr()
         self.end_tag_tr(implied_tag_token("tr"))
-        # XXX how are we sure it's always ignored in the inner_html case?
+        # XXX how are we sure it's always ignored in the fragment case?
         if not ignore_end_tag:
             return token
 
@@ -2171,15 +2138,15 @@ class InRowPhase(Phase):
             self.tree.open_elements.pop()
             self.parser.phase = self.parser.phases["inTableBody"]
         else:
-            # inner_html case.
-            assert self.parser.inner_html
+            # fragment case.
+            assert self.parser.container
             self.parser.parse_error()
 
     def end_tag_table(self, token):
         ignore_end_tag = self.ignore_end_tag_tr()
         self.end_tag_tr(implied_tag_token("tr"))
         # Reprocess the current tag if the tr end tag was not ignored.
-        # XXX how are we sure it's always ignored in the inner_html case?
+        # XXX how are we sure it's always ignored in the fragment case?
         if not ignore_end_tag:
             return token
 
@@ -2236,8 +2203,8 @@ class InCellPhase(Phase):
             self._close_cell()
             return token
         else:
-            # inner_html case.
-            assert self.parser.inner_html
+            # fragment case.
+            assert self.parser.container
             self.parser.parse_error()
 
     def start_tag_other(self, token):
@@ -2268,7 +2235,7 @@ class InCellPhase(Phase):
             self._close_cell()
             return token
         else:
-            # Sometimes inner_html case.
+            # Sometimes fragment case.
             self.parser.parse_error()
 
     def end_tag_other(self, token):
@@ -2297,7 +2264,7 @@ class InSelectPhase(Phase):
         if self.tree.open_elements[-1].name != "html":
             self.parser.parse_error("eof-in-select")
         else:
-            assert self.parser.inner_html
+            assert self.parser.container
 
     def process_characters(self, token):
         if token["data"] == "\u0000":
@@ -2327,7 +2294,7 @@ class InSelectPhase(Phase):
             self.end_tag_select(implied_tag_token("select"))
             return token
         else:
-            assert self.parser.inner_html
+            assert self.parser.container
 
     def start_tag_script(self, token):
         return self.parser.phases["inHead"].process_start_tag(token)
@@ -2362,8 +2329,8 @@ class InSelectPhase(Phase):
                 node = self.tree.open_elements.pop()
             self.parser.reset_insertion_mode()
         else:
-            # inner_html case.
-            assert self.parser.inner_html
+            # fragment case.
+            assert self.parser.container
             self.parser.parse_error()
 
     def end_tag_other(self, token):
@@ -2574,7 +2541,7 @@ class AfterBodyPhase(Phase):
         return token
 
     def end_tag_html(self, name):
-        if self.parser.inner_html:
+        if self.parser.container:
             self.parser.parse_error("unexpected-end-tag-after-body-innerhtml")
         else:
             self.parser.phase = self.parser.phases["afterAfterBody"]
@@ -2602,7 +2569,7 @@ class InFramesetPhase(Phase):
         if self.tree.open_elements[-1].name != "html":
             self.parser.parse_error("eof-in-frameset")
         else:
-            assert self.parser.inner_html
+            assert self.parser.container
 
     def process_characters(self, token):
         self.parser.parse_error("unexpected-char-in-frameset")
@@ -2623,19 +2590,19 @@ class InFramesetPhase(Phase):
 
     def end_tag_frameset(self, token):
         if self.tree.open_elements[-1].name == "html":
-            # inner_html case
+            # fragment case
             self.parser.parse_error("unexpected-frameset-in-frameset-innerhtml")
         else:
             self.tree.open_elements.pop()
-        if (not self.parser.inner_html and
+        if (not self.parser.container and
                 self.tree.open_elements[-1].name != "frameset"):
-            # If we're not in inner_html mode and the current node is not a
+            # If we're not in fragment mode and the current node is not a
             # "frameset" element (anymore) then switch.
             self.parser.phase = self.parser.phases["afterFrameset"]
 
     def end_tag_other(self, token):
-        self.parser.parse_error("unexpected-end-tag-in-frameset",
-                               {"name": token["name"]})
+        self.parser.parse_error(
+            "unexpected-end-tag-in-frameset", {"name": token["name"]})
 
     start_tag_handler = MethodDispatcher([
         ("html", Phase.start_tag_html),
@@ -2792,8 +2759,8 @@ _phases = {
 def adjust_attributes(token, replacements):
     needs_adjustment = token['data'].keys() & replacements.keys()
     if needs_adjustment:
-        token['data'] = type(token['data'])((replacements.get(k, k), v)
-                                            for k, v in token['data'].items())
+        token['data'] = type(token['data'])(
+            (replacements.get(key, key), value) for key, value in token['data'].items())
 
 
 def implied_tag_token(name, type="EndTag", attributes=None, self_closing=False):
@@ -2803,8 +2770,3 @@ def implied_tag_token(name, type="EndTag", attributes=None, self_closing=False):
         "data": {} if attributes is None else attributes,
         "selfClosing": self_closing,
     }
-
-
-class ParseError(Exception):
-    """Error in parsed document"""
-    pass
