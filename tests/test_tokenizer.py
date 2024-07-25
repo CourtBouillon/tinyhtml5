@@ -1,6 +1,7 @@
 import json
 import re
 from pathlib import Path
+from warnings import warn
 
 import pytest
 
@@ -9,7 +10,7 @@ from html5lib.tokenizer import HTMLTokenizer
 
 
 class TokenizerTestParser:
-    def __init__(self, initial_state, last_start_tag=None):
+    def __init__(self, initial_state, last_start_tag):
         self._state = initial_state
         self._last_start_tag = last_start_tag
 
@@ -39,8 +40,8 @@ class TokenizerTestParser:
     def process_emptytag(self, token):
         if token["name"] not in constants.void_elements:
             self.output_tokens.append("ParseError")
-        self.output_tokens.append([
-            "StartTag", token["name"], dict(token["data"][::-1])])
+        self.output_tokens.append(
+            ["StartTag", token["name"], dict(token["data"][::-1])])
 
     def process_endtag(self, token):
         self.output_tokens.append(["EndTag", token["name"], token["selfClosing"]])
@@ -65,31 +66,27 @@ class TokenizerTestParser:
 def concatenate_character_tokens(tokens):
     output_tokens = []
     for token in tokens:
-        if "ParseError" not in token and token[0] == "Character":
-            if (output_tokens and "ParseError" not in output_tokens[-1] and
-                    output_tokens[-1][0] == "Character"):
-                output_tokens[-1][1] += token[1]
-            else:
-                output_tokens.append(token)
+        last_is_character = (
+            output_tokens and "ParseError" not in token + output_tokens[-1] and
+            token[0] == output_tokens[-1][0] == "Character")
+        if last_is_character:
+            output_tokens[-1][1] += token[1]
         else:
             output_tokens.append(token)
     return output_tokens
 
 
 def tokens_match(expected, received):
-    """Test whether the test has passed or failed
+    """Test whether the test has passed or failed.
 
-    If the ignoreErrorOrder flag is set to true we don"t test the relative
-    positions of parse errors and non parse errors
+    If the ignoreErrorOrder flag is set we don’t test the relative
+    positions of parse errors and non parse errors.
 
     """
-    check_self_closing = False
-    for token in expected:
-        if (token[0] == "StartTag" and len(token) == 4 or
-                token[0] == "EndTag" and len(token) == 3):
-            check_self_closing = True
-            break
-
+    check_self_closing = any(
+        token[0] == "StartTag" and len(token) == 4 or
+        token[0] == "EndTag" and len(token) == 3
+        for token in expected)
     if not check_self_closing:
         for token in received:
             if token[0] == "StartTag" or token[0] == "EndTag":
@@ -121,14 +118,7 @@ def decode(input):
 def unescape(test):
     test["input"] = decode(test["input"])
     for token in test["output"]:
-        if token == "ParseError":
-            continue
-        else:
-            token[1] = decode(token[1])
-            if len(token) > 2:
-                for key, value in token[2]:
-                    del token[2][key]
-                    token[2][decode(key)] = decode(value)
+        token[1] = decode(token[1])
     return test
 
 
@@ -147,8 +137,6 @@ _xfails = (
 
 @pytest.mark.parametrize("id, test", _tests, ids=(id for id, _ in _tests))
 def test_tokenizer(id, test):
-    if id in _xfails:
-        pytest.xfail()
     if "initialStates" not in test:
         test["initialStates"] = ["Data state"]
     if "doubleEscaped" in test:
@@ -165,4 +153,12 @@ def test_tokenizer(id, test):
             f"\nInput: {test['input']}",
             f"\nExpected: {expected!r}",
             f"\nReceived: {tokens!r}")
-        assert tokens_match(expected, received), error_message
+        match = tokens_match(expected, received)
+        if id in _xfails:
+            if not match:
+                pytest.xfail()
+        else:
+            assert match, error_message
+    else:
+        if id in _xfails:
+            warn(f"{id} passes but is marked as xfail")
