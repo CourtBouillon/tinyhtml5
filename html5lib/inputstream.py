@@ -40,88 +40,8 @@ ascii_punctuation_re = re.compile(
 characters_until_regex = {}
 
 
-class BufferedStream:
-    """Buffering for streams that do not have buffering of their own.
-
-    The buffer is implemented as a list of chunks on the assumption that
-    joining many strings will be slow since it is O(n**2).
-
-    """
-
-    def __init__(self, stream):
-        self.stream = stream
-        self.buffer = []
-        self.position = [-1, 0]  # chunk number, offset
-
-    def tell(self):
-        pos = 0
-        for chunk in self.buffer[:self.position[0]]:
-            pos += len(chunk)
-        pos += self.position[1]
-        return pos
-
-    def seek(self, pos):
-        assert pos <= self._buffered_bytes()
-        offset = pos
-        i = 0
-        while len(self.buffer[i]) < offset:
-            offset -= len(self.buffer[i])
-            i += 1
-        self.position = [i, offset]
-
-    def read(self, bytes):
-        if not self.buffer:
-            return self._read_stream(bytes)
-        elif (self.position[0] == len(self.buffer) and
-              self.position[1] == len(self.buffer[-1])):
-            return self._read_stream(bytes)
-        else:
-            return self._read_from_buffer(bytes)
-
-    def _buffered_bytes(self):
-        return sum([len(item) for item in self.buffer])
-
-    def _read_stream(self, bytes):
-        data = self.stream.read(bytes)
-        self.buffer.append(data)
-        self.position[0] += 1
-        self.position[1] = len(data)
-        return data
-
-    def _read_from_buffer(self, bytes):
-        remaining_bytes = bytes
-        rv = []
-        buffer_index = self.position[0]
-        buffer_offset = self.position[1]
-        while buffer_index < len(self.buffer) and remaining_bytes != 0:
-            assert remaining_bytes > 0
-            buffered_data = self.buffer[buffer_index]
-
-            if remaining_bytes <= len(buffered_data) - buffer_offset:
-                bytes_to_read = remaining_bytes
-                self.position = [buffer_index, buffer_offset + bytes_to_read]
-            else:
-                bytes_to_read = len(buffered_data) - buffer_offset
-                self.position = [buffer_index, len(buffered_data)]
-                buffer_index += 1
-            rv.append(buffered_data[buffer_offset:buffer_offset + bytes_to_read])
-            remaining_bytes -= bytes_to_read
-
-            buffer_offset = 0
-
-        if remaining_bytes:
-            rv.append(self._read_stream(remaining_bytes))
-
-        return b"".join(rv)
-
-
 def HTMLInputStream(source, **kwargs):  # noqa: N802
-    is_unicode = isinstance(source.read(0) if hasattr(source, "read") else source, str)
-
-    if is_unicode:
-        if encodings := [kwarg for kwarg in kwargs if kwarg.endswith("_encoding")]:
-            raise TypeError(
-                f"Cannot set an encoding with a unicode input, set {encodings!r}")
+    if isinstance(source.read(0) if hasattr(source, "read") else source, str):
         return HTMLUnicodeInputStream(source, **kwargs)
     else:
         return HTMLBinaryInputStream(source, **kwargs)
@@ -333,8 +253,6 @@ class HTMLBinaryInputStream(HTMLUnicodeInputStream):
         # self.encoding as appropriate.
         self.raw_stream = self.open_stream(source)
 
-        HTMLUnicodeInputStream.__init__(self, self.raw_stream)
-
         # Encoding Information.
         # Number of bytes to use when looking for a meta element with
         # encoding information.
@@ -350,23 +268,20 @@ class HTMLBinaryInputStream(HTMLUnicodeInputStream):
         self.encoding = self.determine_encoding()
         assert self.encoding[0] is not None
 
-        # Call superclass.
+        # Reset and set Unicode stream.
         self.reset()
 
     def reset(self):
-        self.stream = self.encoding[0].codec_info.streamreader(
-            self.raw_stream, 'replace')
+        streamreader = self.encoding[0].codec_info.streamreader
+        self.stream = streamreader(self.raw_stream, 'replace')
         super().reset()
 
     def open_stream(self, source):
-        stream = source if hasattr(source, 'read') else BytesIO(source)
-
-        try:
-            stream.seek(stream.tell())
-        except Exception:
-            stream = BufferedStream(stream)
-
-        return stream
+        if hasattr(source, 'read'):
+            if hasattr(source, 'seekable') and source.seekable():
+                return source
+            source = source.read()
+        return BytesIO(source)
 
     def determine_encoding(self):
         # BOMs take precedence over everything. This will also read past the
@@ -499,31 +414,22 @@ class EncodingBytes(bytes):
         position = self._position = self._position + 1
         if position >= len(self):
             raise StopIteration
-        elif position < 0:
-            raise TypeError
         return self[position:position + 1]
 
     def previous(self):
-        position = self._position
-        if position >= len(self):
-            raise StopIteration
-        elif position < 0:
-            raise TypeError
-        self._position = position = position - 1
+        self._position = position = self._position - 1
         return self[position:position + 1]
 
     def set_position(self, position):
         if self._position >= len(self):
             raise StopIteration
-        self._position = position
+        self._position = max(0, position)
 
     def get_position(self):
         if self._position >= len(self):
             raise StopIteration
         if self._position >= 0:
             return self._position
-        else:
-            return None
 
     position = property(get_position, set_position)
 
@@ -821,5 +727,3 @@ def lookup_encoding(encoding):
             return webencodings.lookup(encoding)
         except AttributeError:
             return None
-    else:
-        return None

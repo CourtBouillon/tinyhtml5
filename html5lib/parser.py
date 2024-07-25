@@ -54,7 +54,8 @@ class HTMLParser:
         """
         self.tree = TreeBuilder(namespace_html_elements)
         self.errors = []
-        self.phases = {name: cls(self, self.tree) for name, cls in _phases.items()}
+        self.phases = {name: cls(self, self.tree) for name, cls in
+                       _phases.items()}
 
     def _parse(self, stream, container=None, scripting=False, **kwargs):
         self.container = container
@@ -333,7 +334,7 @@ class Phase:
         self.__start_tag_cache = {}
         self.__end_tag_cache = {}
 
-    def process_eof(self):
+    def process_eof(self):  # pragma: no cover
         raise NotImplementedError
 
     def process_comment(self, token):
@@ -1573,7 +1574,7 @@ class TextPhase(Phase):
         return True
 
     def start_tag_other(self, token):
-        assert False, (
+        assert False, (  # pragma: no cover
             f"Tried to process start tag {token['name']} in RCDATA/RAWTEXT mode")
 
     def end_tag_script(self, token):

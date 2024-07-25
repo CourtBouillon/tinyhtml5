@@ -250,7 +250,7 @@ class TreeBuilder:
                 return False
 
         # We should never reach this point.
-        assert False
+        assert False  # pragma: no cover
 
     def reconstruct_active_formatting_elements(self):
         # Within this algorithm the order of steps described in the
@@ -333,9 +333,7 @@ class TreeBuilder:
         doctype = DocumentType(name, public_id, system_id)
         self.document.append_child(doctype)
 
-    def insert_comment(self, token, parent=None):
-        if parent is None:
-            parent = self.open_elements[-1]
+    def insert_comment(self, token, parent):
         parent.append_child(Comment(token["data"]))
 
     def create_element(self, token):

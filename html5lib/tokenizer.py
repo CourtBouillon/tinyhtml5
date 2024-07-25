@@ -1113,7 +1113,7 @@ class HTMLTokenizer:
             matched = True
             for expected in "CDATA[":
                 stack.append(self.stream.character())
-                if not stack[-1] or stack[-1] != expected:
+                if stack[-1] != expected:
                     matched = False
                     break
             if matched:
