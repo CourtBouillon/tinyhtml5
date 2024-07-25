@@ -178,15 +178,7 @@ class HTMLTokenizer:
                     0xFFFFE, 0xFFFFF, 0x10FFFE, 0x10FFFF])):
                 self.parse_error(
                     "illegal-codepoint-for-numeric-entity", integer=integer)
-            try:
-                # Try/except needed as UCS-2 Python builds' unichar only works
-                # within the BMP.
-                replacement = chr(integer)
-            except ValueError:
-                value = integer - 0x10000
-                replacement = (
-                    chr(0xD800 | (value >> 10)) +
-                    chr(0xDC00 | (value & 0x3FF)))
+            replacement = chr(integer)
 
         # Discard the ; if present. Otherwise, put it back on the queue and
         # invoke parse_error on parser.

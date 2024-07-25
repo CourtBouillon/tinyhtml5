@@ -105,7 +105,7 @@ def tokens_match(expected, received):
     return tokens["expected"] == tokens["received"]
 
 
-def decode(inp):
+def decode(input):
     """Decode \\uXXXX escapes.
 
     This decodes \\uXXXX escapes, possibly into non-BMP characters when
@@ -114,18 +114,8 @@ def decode(inp):
     """
     # This cannot be implemented using the unicode_escape codec because that
     # requires its input be ISO-8859-1, and we need arbitrary unicode as input.
-    def repl(m):
-        if m.group(2) is not None:
-            high = int(m.group(1), 16)
-            low = int(m.group(2), 16)
-            if 0xD800 <= high <= 0xDBFF and 0xDC00 <= low <= 0xDFFF:
-                cp = ((high - 0xD800) << 10) + (low - 0xDC00) + 0x10000
-                return chr(cp)
-            else:
-                return chr(high) + chr(low)
-        else:
-            return chr(int(m.group(1), 16))
-    return re.compile(r"\\u([0-9A-Fa-f]{4})(?:\\u([0-9A-Fa-f]{4}))?").sub(repl, inp)
+    return re.compile(r"\\u([0-9A-Fa-f]{4})").sub(
+        lambda match: chr(int(match.group(1), 16)), input)
 
 
 def unescape(test):

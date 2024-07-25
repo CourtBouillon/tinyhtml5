@@ -150,13 +150,7 @@ class HTMLUnicodeInputStream:
         element).
 
         """
-
-        if len("\U0010FFFF") == 1:
-            self.report_character_errors = self.character_errors_ucs4
-        else:
-            self.report_character_errors = self.character_errors_ucs2
-
-        # List of where new lines occur
+        # List of where new lines occur.
         self.new_lines = [0]
 
         self.encoding = (lookup_encoding("utf-8"), "certain")
@@ -258,37 +252,9 @@ class HTMLUnicodeInputStream:
 
         return True
 
-    def character_errors_ucs4(self, data):
+    def report_character_errors(self, data):
         for _ in range(len(invalid_unicode_re.findall(data))):
             self.errors.append("invalid-codepoint")
-
-    def character_errors_ucs2(self, data):
-        # Someone picked the wrong compile option.
-        skip = False
-        for match in invalid_unicode_re.finditer(data):
-            if skip:
-                continue
-            codepoint = ord(match.group())
-            position = match.start()
-            # Pretty sure there should be endianness issues here.
-            is_surrogate_pair = (
-                len(data[position:position + 2]) == 2 and
-                0xDBFF >= ord(data[position]) >= 0xD800 and
-                0xDFFF >= ord(data[position+1]) >= 0xDC00)
-            if is_surrogate_pair:
-                # We have a surrogate pair!
-                character_value = (
-                    0x10000 + (ord(data[position]) - 0xD800) * 0x400 +
-                    (ord(data[position+1]) - 0xDC00))
-                if character_value in non_bmp_invalid_codepoints:
-                    self.errors.append("invalid-codepoint")
-                skip = True
-            elif (codepoint >= 0xD800 and codepoint <= 0xDFFF and
-                  position == len(data) - 1):
-                self.errors.append("invalid-codepoint")
-            else:
-                skip = False
-                self.errors.append("invalid-codepoint")
 
     def chars_until(self, characters, opposite=False):
         """Return a string of characters from the stream.
