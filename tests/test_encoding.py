@@ -20,7 +20,7 @@ def test_parser_encoding(id, test):
     parser.parse(test[b"data"])
     encoding = test[b"encoding"].lower().decode("ascii")
     error_message = (
-        f"\nData: {test[b"data"]!r}",
+        f"\nData: {test[b'data']!r}",
         f"\nExpected encoding: {encoding}",
         f"\nParser encoding: {parser.encoding}")
     assert encoding == parser.encoding, error_message
@@ -36,7 +36,7 @@ def test_prescan_encoding(id, test):
 
     encoding = test[b"encoding"].lower().decode("ascii")
     error_message = (
-        f"\nData: {test[b"data"]!r}",
+        f"\nData: {test[b'data']!r}",
         f"\nExpected encoding: {encoding}",
         f"\nParser encoding: {stream.encoding[0].name}")
     assert encoding == stream.encoding[0].name, error_message

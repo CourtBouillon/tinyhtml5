@@ -130,7 +130,7 @@ def test_tree_construction(id, test, namespace):
 
     if id in _xfails:
         if expected == output:
-            warn(f"{id}{"-ns" if namespace else ""} passes but is marked as xfail")
+            warn(f"{id}{'-ns' if namespace else ''} passes but is marked as xfail")
         else:
             pytest.xfail()
     else:

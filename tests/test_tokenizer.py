@@ -23,7 +23,7 @@ class TokenizerTestParser:
 
         types = {value: key.lower() for key, value in constants.token_types.items()}
         for token in tokenizer:
-            getattr(self, f"process_{types[token["type"]]}")(token)
+            getattr(self, f"process_{types[token['type']]}")(token)
 
         return self.output_tokens
 
@@ -162,7 +162,7 @@ def test_tokenizer(id, test):
         received = [token[0] if token[0] == "ParseError" else token for token in tokens]
         error_message = (
             f"\nInitial state: {initial_state}",
-            f"\nInput: {test["input"]}",
+            f"\nInput: {test['input']}",
             f"\nExpected: {expected!r}",
             f"\nReceived: {tokens!r}")
         assert tokens_match(expected, received), error_message
