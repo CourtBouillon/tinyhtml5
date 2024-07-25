@@ -1,6 +1,5 @@
 from bisect import bisect_left
 from collections import deque
-from collections.abc import Mapping
 from html.entities import html5 as entities
 
 from .constants import (
@@ -16,81 +15,24 @@ from .constants import (
 )
 from .inputstream import HTMLInputStream
 
-
-class Trie(Mapping):
-    def __init__(self, data):
-        if any(not isinstance(key, str) for key in data.keys()):
-            raise TypeError("All keys must be strings")
-
-        self._data = data
-        self._keys = sorted(data.keys())
-        self._cache_string = ""
-        self._cache_points = (0, len(data))
-
-    def __contains__(self, key):
-        return key in self._data
-
-    def __len__(self):
-        return len(self._data)
-
-    def __iter__(self):
-        return iter(self._data)
-
-    def __getitem__(self, key):
-        return self._data[key]
-
-    def keys(self, prefix=None):
-        if prefix is None or prefix == "" or not self._keys:
-            return set(self._keys)
-
-        if prefix.startswith(self._cache_string):
-            start = i = bisect_left(self._keys, prefix, *self._cache_points)
-        else:
-            start = i = bisect_left(self._keys, prefix)
-
-        keys = set()
-        if start == len(self._keys):
-            return keys
-
-        while self._keys[i].startswith(prefix):
-            keys.add(self._keys[i])
-            i += 1
-
-        self._cache_string = prefix
-        self._cache_points = (start, i)
-
-        return keys
-
-    def has_keys_with_prefix(self, prefix):
-        if prefix in self._data:
-            return True
-
-        if prefix.startswith(self._cache_string):
-            i = bisect_left(self._keys, prefix, *self._cache_points)
-        else:
-            i = bisect_left(self._keys, prefix)
-
-        if i == len(self._keys):
-            return False
-
-        return self._keys[i].startswith(prefix)
-
-    def longest_prefix(self, prefix):
-        if prefix in self:
-            return prefix
-
-        for i in range(1, len(prefix) + 1):
-            if prefix[:-i] in self:
-                return prefix[:-i]
-
-        raise KeyError(prefix)
-
-    def longest_prefix_item(self, prefix):
-        longest_prefix = self.longest_prefix(prefix)
-        return (longest_prefix, self[longest_prefix])
+entity_keys = tuple(sorted(entities))
 
 
-entities_trie = Trie(entities)
+def has_keys_with_prefix(prefix):
+    if prefix in entities:
+        return True
+    if (i := bisect_left(entity_keys, prefix)) == len(entities):
+        return False
+    return entity_keys[i].startswith(prefix)
+
+
+def longest_prefix(prefix):
+    if prefix in entities:
+        return prefix
+    for i in range(1, len(prefix) + 1):
+        if prefix[:-i] in entities:
+            return prefix[:-i]
+    raise KeyError(prefix)
 
 
 class HTMLTokenizer:
@@ -224,7 +166,7 @@ class HTMLTokenizer:
             # and compare to these to a substring of the entity names in the
             # list until the substring no longer matches.
             while stack[-1] is not EOF:
-                if not entities_trie.has_keys_with_prefix("".join(stack)):
+                if not has_keys_with_prefix("".join(stack)):
                     break
                 stack.append(self.stream.character())
 
@@ -233,7 +175,7 @@ class HTMLTokenizer:
             # Try to find the longest entity the string will match to take care
             # of &noti for instance.
             try:
-                entity_name = entities_trie.longest_prefix("".join(stack[:-1]))
+                entity_name = longest_prefix("".join(stack[:-1]))
             except KeyError:
                 self.parse_error("expected-named-entity")
                 self.stream.unget(stack.pop())
