@@ -49,8 +49,6 @@ class HTMLUnicodeInputStream:
 
     """
 
-    _default_chunk_size = 10240
-
     def __init__(self, source):
         """Initialise the HTMLInputStream.
 
@@ -127,10 +125,7 @@ class HTMLUnicodeInputStream:
 
         return character
 
-    def read_chunk(self, chunk_size=None):
-        if chunk_size is None:
-            chunk_size = self._default_chunk_size
-
+    def read_chunk(self):
         self.previous_number_lines, self.previous_number_columns = self._position(
             self.chunk_size)
 
@@ -138,7 +133,7 @@ class HTMLUnicodeInputStream:
         self.chunk_size = 0
         self.chunk_offset = 0
 
-        data = self.stream.read(chunk_size)
+        data = self.stream.read(10240)
 
         # Deal with CR LF and surrogates broken across chunks.
         if self._buffered_character:
@@ -154,8 +149,9 @@ class HTMLUnicodeInputStream:
                 self._buffered_character = data[-1]
                 data = data[:-1]
 
-        if self.report_character_errors:
-            self.report_character_errors(data)
+        # Report character errors.
+        for _ in range(len(invalid_unicode_re.findall(data))):
+            self.errors.append("invalid-codepoint")
 
         # Replace invalid characters.
         data = data.replace("\r\n", "\n")
@@ -165,10 +161,6 @@ class HTMLUnicodeInputStream:
         self.chunk_size = len(data)
 
         return True
-
-    def report_character_errors(self, data):
-        for _ in range(len(invalid_unicode_re.findall(data))):
-            self.errors.append("invalid-codepoint")
 
     def chars_until(self, characters, opposite=False):
         """Return a string of characters from the stream.
@@ -353,24 +345,14 @@ class HTMLBinaryInputStream(HTMLUnicodeInputStream):
         assert isinstance(string, bytes)
 
         # Try detecting the BOM using bytes from the string.
-        encoding = boms.get(string[:3])  # UTF-8
-        seek = 3
-        if not encoding:
-            # Need to detect UTF-32 before UTF-16.
-            encoding = boms.get(string)  # UTF-32
-            seek = 4
-            if not encoding:
-                encoding = boms.get(string[:2])  # UTF-16
-                seek = 2
+        for seek in (3, 4, 2):  # UTF-8, UTF-32, UTF-16
+            if encoding := boms.get(string[:seek]):
+                # Set the read position past the BOM if one was found.
+                self.raw_stream.seek(seek)
+                return lookup_encoding(encoding)
 
-        # Set the read position past the BOM if one was found, otherwise
-        # set it to the start of the stream.
-        if encoding:
-            self.raw_stream.seek(seek)
-            return lookup_encoding(encoding)
-        else:
-            self.raw_stream.seek(0)
-            return None
+        # Otherwise, set it to the start of the stream.
+        self.raw_stream.seek(0)
 
     def detect_encoding_meta(self):
         """Report the encoding declared by the meta element."""
@@ -400,9 +382,6 @@ class EncodingBytes(bytes):
 
     def __init__(self, value):
         self._position = -1
-
-    def __iter__(self):
-        return self
 
     def __next__(self):
         position = self._position = self._position + 1
@@ -482,7 +461,6 @@ class EncodingParser:
     """Mini parser for detecting character encoding from meta elements."""
 
     def __init__(self, data):
-        """string - the data to work on for encoding detection"""
         self.data = EncodingBytes(data)
         self.encoding = None
 
