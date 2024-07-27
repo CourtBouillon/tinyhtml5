@@ -53,8 +53,7 @@ class HTMLParser:
         """
         self.tree = TreeBuilder(namespace_html_elements)
         self.errors = []
-        self.phases = {name: cls(self, self.tree) for name, cls in
-                       _phases.items()}
+        self.phases = {name: cls(self, self.tree) for name, cls in _phases.items()}
 
     def _parse(self, stream, container=None, scripting=False, **kwargs):
         self.container = container
@@ -181,7 +180,7 @@ class HTMLParser:
                     "non-void-element-with-trailing-solidus",
                     {"name": previous_token["name"]})
 
-        # When the loop finishes it's EOF
+        # When the loop finishes it's EOF.
         reprocess = True
         phases = []
         while reprocess:
@@ -282,8 +281,7 @@ class HTMLParser:
                 assert self.container
                 last = True
                 node_name = self.container
-            # Check for conditions that should only happen in the fragment
-            # case.
+            # Check for conditions that should only happen in the fragment case.
             if node_name in ("select", "colgroup", "head", "html"):
                 assert self.container
 
@@ -1137,7 +1135,6 @@ class InBodyPhase(Phase):
             self.start_tag_other(token)
 
     def start_tag_rawtext(self, token):
-        """iframe, noembed noframes, noscript(if scripting enabled)"""
         self.parser.parse_rcdata_rawtext(token, "RAWTEXT")
 
     def start_tag_opt(self, token):
@@ -1701,7 +1698,7 @@ class InTablePhase(Phase):
             self.tree.open_elements.pop()
             self.parser.reset_insertion_mode()
         else:
-            # fragment case.
+            # Fragment case.
             assert self.parser.container
             self.parser.parse_error()
 
@@ -1822,7 +1819,7 @@ class InCaptionPhase(Phase):
             self.tree.clear_active_formatting_elements()
             self.parser.phase = self.parser.phases["inTable"]
         else:
-            # fragment case.
+            # Fragment case.
             assert self.parser.container
             self.parser.parse_error()
 
@@ -1889,7 +1886,7 @@ class InColumnGroupPhase(Phase):
 
     def end_tag_colgroup(self, token):
         if self.ignore_end_tag_colgroup():
-            # fragment case
+            # Fragment case.
             assert self.parser.container
             self.parser.parse_error()
         else:
@@ -1959,7 +1956,7 @@ class InTableBodyPhase(Phase):
                 implied_tag_token(self.tree.open_elements[-1].name))
             return token
         else:
-            # fragment case.
+            # Fragment case.
             assert self.parser.container
             self.parser.parse_error()
 
@@ -1984,7 +1981,7 @@ class InTableBodyPhase(Phase):
                 implied_tag_token(self.tree.open_elements[-1].name))
             return token
         else:
-            # fragment case.
+            # Fragment case.
             assert self.parser.container
             self.parser.parse_error()
 
@@ -2056,7 +2053,7 @@ class InRowPhase(Phase):
             self.tree.open_elements.pop()
             self.parser.phase = self.parser.phases["inTableBody"]
         else:
-            # fragment case.
+            # Fragment case.
             assert self.parser.container
             self.parser.parse_error()
 
@@ -2119,7 +2116,7 @@ class InCellPhase(Phase):
             self._close_cell()
             return token
         else:
-            # fragment case.
+            # Fragment case.
             assert self.parser.container
             self.parser.parse_error()
 
@@ -2243,7 +2240,7 @@ class InSelectPhase(Phase):
                 node = self.tree.open_elements.pop()
             self.parser.reset_insertion_mode()
         else:
-            # fragment case.
+            # Fragment case.
             assert self.parser.container
             self.parser.parse_error()
 
@@ -2498,7 +2495,7 @@ class InFramesetPhase(Phase):
 
     def end_tag_frameset(self, token):
         if self.tree.open_elements[-1].name == "html":
-            # fragment case
+            # Fragment case.
             self.parser.parse_error("unexpected-frameset-in-frameset-innerhtml")
         else:
             self.tree.open_elements.pop()
@@ -2659,8 +2656,7 @@ _phases = {
 
 
 def adjust_attributes(token, replacements):
-    needs_adjustment = token['data'].keys() & replacements.keys()
-    if needs_adjustment:
+    if token['data'].keys() & replacements.keys():
         token['data'] = type(token['data'])(
             (replacements.get(key, key), value) for key, value in token['data'].items())
 
