@@ -19,10 +19,10 @@ from .tokenizer import HTMLTokenizer
 from .treebuilder import Marker, TreeBuilder
 
 
-def parse(doc, namespace_html_elements=True, **kwargs):
-    """Parse an HTML document as a string or file-like object into a tree
+def parse(document, namespace_html_elements=True, **kwargs):
+    """Parse an HTML document into a tree.
 
-    :arg doc: the document to parse as a string or file-like object.
+    :arg document: the document to parse as a string, Path or file-like object.
 
     :arg namespace_html_elements: whether or not to namespace HTML elements.
 
@@ -35,8 +35,7 @@ def parse(doc, namespace_html_elements=True, **kwargs):
     <Element u'{http://www.w3.org/1999/xhtml}html' at 0x7feac4909db0>
 
     """
-    parser = HTMLParser(namespace_html_elements)
-    return parser.parse(doc, **kwargs)
+    return HTMLParser(namespace_html_elements).parse(document, **kwargs)
 
 
 class HTMLParser:

@@ -1,6 +1,7 @@
 import codecs
 import re
 from io import BytesIO, StringIO
+from pathlib import Path
 from string import ascii_letters, ascii_uppercase
 
 import webencodings
@@ -35,7 +36,9 @@ characters_until_regex = {}
 
 
 def HTMLInputStream(source, **kwargs):  # noqa: N802
-    if isinstance(source.read(0) if hasattr(source, "read") else source, str):
+    if isinstance(source, Path):
+        return HTMLUnicodeInputStream(source.read_text(), **kwargs)
+    elif isinstance(source.read(0) if hasattr(source, "read") else source, str):
         return HTMLUnicodeInputStream(source, **kwargs)
     else:
         return HTMLBinaryInputStream(source, **kwargs)
