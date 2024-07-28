@@ -239,8 +239,7 @@ class HTMLParser:
         self._parse(stream, container=container, **kwargs)
         return self.tree.get_fragment()
 
-    def parse_error(self, errorcode="XXX-undefined-error", datavars=None):
-        # XXX The idea is to make errorcode mandatory.
+    def parse_error(self, errorcode, datavars=None):
         if datavars is None:
             datavars = {}
         self.errors.append((self.tokenizer.stream.position(), errorcode, datavars))
@@ -1162,7 +1161,7 @@ class InBodyPhase(Phase):
         if self.tree.element_in_scope("ruby"):
             self.tree.generate_implied_end_tags()
             if self.tree.open_elements[-1].name != "ruby":
-                self.parser.parse_error()
+                self.parser.parse_error("rp-or-rt-tag-not-in-ruby-scope")
         self.tree.insert_element(token)
 
     def start_tag_math(self, token):
@@ -1218,7 +1217,7 @@ class InBodyPhase(Phase):
 
     def end_tag_body(self, token):
         if not self.tree.element_in_scope("body"):
-            self.parser.parse_error()
+            self.parser.parse_error("unexpected-end-tag", {"name": "body"})
             return
         elif self.tree.open_elements[-1].name != "body":
             for node in self.tree.open_elements[2:]:
@@ -1700,7 +1699,7 @@ class InTablePhase(Phase):
         else:
             # Fragment case.
             assert self.parser.container
-            self.parser.parse_error()
+            self.parser.parse_error("unexpected-end-tag", {"name": token["name"]})
 
     def end_tag_ignore(self, token):
         self.parser.parse_error("unexpected-end-tag", {"name": token["name"]})
@@ -1795,7 +1794,7 @@ class InCaptionPhase(Phase):
         return self.parser.phases["inBody"].process_characters(token)
 
     def start_tag_table_element(self, token):
-        self.parser.parse_error()
+        self.parser.parse_error("unexpected-table-start-tag-in-caption")
         # XXX Have to duplicate logic here to find out if the tag is ignored.
         ignore_end_tag = self.ignore_end_tag_caption()
         self.parser.phase.process_end_tag(implied_tag_token("caption"))
@@ -1821,10 +1820,10 @@ class InCaptionPhase(Phase):
         else:
             # Fragment case.
             assert self.parser.container
-            self.parser.parse_error()
+            self.parser.parse_error("unexpected-end-tag", {"name": token["name"]})
 
     def end_tag_table(self, token):
-        self.parser.parse_error()
+        self.parser.parse_error("unexpected-table-end-tag-in-caption")
         ignore_end_tag = self.ignore_end_tag_caption()
         self.parser.phase.process_end_tag(implied_tag_token("caption"))
         if not ignore_end_tag:
@@ -1888,7 +1887,7 @@ class InColumnGroupPhase(Phase):
         if self.ignore_end_tag_colgroup():
             # Fragment case.
             assert self.parser.container
-            self.parser.parse_error()
+            self.parser.parse_error("unexpected-end-tag", {"name": token["name"]})
         else:
             self.tree.open_elements.pop()
             self.parser.phase = self.parser.phases["inTable"]
@@ -1958,7 +1957,8 @@ class InTableBodyPhase(Phase):
         else:
             # Fragment case.
             assert self.parser.container
-            self.parser.parse_error()
+            self.parser.parse_error(
+                "unexpected-start-tag-out-of-table", {"name": token["name"]})
 
     def start_tag_other(self, token):
         return self.parser.phases["inTable"].process_start_tag(token)
@@ -1983,7 +1983,7 @@ class InTableBodyPhase(Phase):
         else:
             # Fragment case.
             assert self.parser.container
-            self.parser.parse_error()
+            self.parser.parse_error("unexpected-end-tag", {"name": token["name"]})
 
     def end_tag_ignore(self, token):
         self.parser.parse_error(
@@ -2055,7 +2055,7 @@ class InRowPhase(Phase):
         else:
             # Fragment case.
             assert self.parser.container
-            self.parser.parse_error()
+            self.parser.parse_error("unexpected-end-tag", {"name": token["name"]})
 
     def end_tag_table(self, token):
         ignore_end_tag = self.ignore_end_tag_tr()
@@ -2070,7 +2070,7 @@ class InRowPhase(Phase):
             self.end_tag_tr(implied_tag_token("tr"))
             return token
         else:
-            self.parser.parse_error()
+            self.parser.parse_error("unexpected-end-tag", {"name": token["name"]})
 
     def end_tag_ignore(self, token):
         self.parser.parse_error(
@@ -2118,7 +2118,8 @@ class InCellPhase(Phase):
         else:
             # Fragment case.
             assert self.parser.container
-            self.parser.parse_error()
+            self.parser.parse_error(
+                "unexpected-start-tag-out-of-table-cell", {"name": token["name"]})
 
     def start_tag_other(self, token):
         return self.parser.phases["inBody"].process_start_tag(token)
@@ -2149,7 +2150,7 @@ class InCellPhase(Phase):
             return token
         else:
             # Sometimes fragment case.
-            self.parser.parse_error()
+            self.parser.parse_error("unexpected-end-tag", {"name": token["name"]})
 
     def end_tag_other(self, token):
         return self.parser.phases["inBody"].process_end_tag(token)
@@ -2242,7 +2243,7 @@ class InSelectPhase(Phase):
         else:
             # Fragment case.
             assert self.parser.container
-            self.parser.parse_error()
+            self.parser.parse_error("unexpected-end-tag", {"name": token["name"]})
 
     def end_tag_other(self, token):
         self.parser.parse_error("unexpected-end-tag-in-select", {"name": token["name"]})
