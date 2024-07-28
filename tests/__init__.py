@@ -1,48 +1,34 @@
-import codecs
 from collections import defaultdict
+from os import linesep
 
 
 class Data:
     def __init__(self, filename, new_test_heading="data", encoding="utf8"):
-        if encoding is None:
-            self.f = open(filename, mode="rb")
+        if encoding:
+            self.fd = open(filename, encoding=encoding, newline=linesep)
         else:
-            self.f = codecs.open(filename, encoding=encoding)
+            self.fd = open(filename, mode="rb")
         self.encoding = encoding
         self.new_test_heading = new_test_heading
 
     def __iter__(self):
         data = defaultdict(lambda: None)
         key = None
-        for line in self.f:
-            heading = self.is_section_heading(line)
-            if heading:
+        for line in self.fd:
+            # Remove trailing newline.
+            line = line[:-len(linesep)]
+            if line.startswith("#" if self.encoding else b"#"):
+                heading = line[1:].strip()
                 if data and heading == self.new_test_heading:
-                    # Remove trailing newline
+                    # Remove empty line.
                     data[key] = data[key][:-1]
-                    yield self.normalise_output(data)
+                    yield data
                     data = defaultdict(lambda: None)
                 key = heading
                 data[key] = "" if self.encoding else b""
             elif key is not None:
+                if data[key]:
+                    data[key] += "\n" if self.encoding else b"\n"
                 data[key] += line
         if data:
-            yield self.normalise_output(data)
-
-    def is_section_heading(self, line):
-        """If the current heading is a test section heading return the heading,
-        otherwise return False"""
-        # print(line)
-        if line.startswith("#" if self.encoding else b"#"):
-            return line[1:].strip()
-        else:
-            return False
-
-    def normalise_output(self, data):
-        # Remove trailing newlines
-        for key, value in data.items():
-            if value.endswith("\n" if self.encoding else b"\n"):
-                data[key] = value[:-1]
-        return data
-
-
+            yield data

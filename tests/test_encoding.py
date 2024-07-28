@@ -36,7 +36,7 @@ def test_prescan_encoding(id, test):
 
     encoding = test[b"encoding"].lower().decode("ascii")
     error_message = (
-        f"\nData: {test[b'data']!r}",
-        f"\nExpected encoding: {encoding}",
+        f"\nData: {test[b'data']!r}"
+        f"\nExpected encoding: {encoding}"
         f"\nParser encoding: {stream.encoding[0].name}")
     assert encoding == stream.encoding[0].name, error_message

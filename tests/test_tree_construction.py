@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from warnings import warn
 from xml.etree import ElementTree
@@ -109,6 +110,13 @@ _xfails = (
     # Namespace in fragment.
     "foreign-fragment-59", "foreign-fragment-65",
 )
+if os.name == "nt":
+    # Fail because of newline management on Windows.
+    _xfails += (
+        "domjs-unsafe-0",
+        "pending-spec-changes-plain-text-unsafe-0",
+        "plain-text-unsafe-0",
+    )
 
 @pytest.mark.parametrize("namespace", (False, True), ids=("nons", "ns"))
 @pytest.mark.parametrize("id, test", _tests, ids=(id for id, _ in _tests))
@@ -118,7 +126,7 @@ def test_tree_construction(id, test, namespace):
 
     input = test["data"]
     container = test["document-fragment"]
-    expected = "\n".join(convert(test["document"].split("\n"), 2))
+    expected = "\n".join(convert(test.get("document", "").split("\n"), 2))
 
     if container:
         document = parser.parse_fragment(input, container=container)
