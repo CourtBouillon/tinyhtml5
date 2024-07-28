@@ -83,7 +83,7 @@ class HTMLParser:
                 # State already is data state.
                 # self.tokenizer.state = self.tokenizer.data_state
                 pass
-            self.phase = self.phases["beforeHtml"]
+            self.phase = self.phases["before html"]
             self.phase._insert_html_element()
             self.reset_insertion_mode()
         else:
@@ -159,7 +159,7 @@ class HTMLParser:
                             space_characters_token))):
                         phase = self.phase
                     else:
-                        phase = self.phases["inForeignContent"]
+                        phase = self.phases["in foreign content"]
 
                     if type == characters_token:
                         new_token = phase.process_characters(new_token)
@@ -258,20 +258,20 @@ class HTMLParser:
         # specification.)
         last = False
         new_modes = {
-            "select": "inSelect",
-            "td": "inCell",
-            "th": "inCell",
-            "tr": "inRow",
-            "tbody": "inTableBody",
-            "thead": "inTableBody",
-            "tfoot": "inTableBody",
-            "caption": "inCaption",
-            "colgroup": "inColumnGroup",
-            "table": "inTable",
-            "head": "inBody",
-            "body": "inBody",
-            "frameset": "inFrameset",
-            "html": "beforeHead"
+            "select": "in select",
+            "td": "in cell",
+            "th": "in cell",
+            "tr": "in row",
+            "tbody": "in table body",
+            "thead": "in table body",
+            "tfoot": "in table body",
+            "caption": "in caption",
+            "colgroup": "in column group",
+            "table": "in table",
+            "head": "in body",
+            "body": "in body",
+            "frameset": "in frameset",
+            "html": "before head"
         }
         for node in self.tree.open_elements[::-1]:
             node_name = node.name
@@ -291,7 +291,7 @@ class HTMLParser:
                 new_phase = self.phases[new_modes[node_name]]
                 break
             elif last:
-                new_phase = self.phases["inBody"]
+                new_phase = self.phases["in body"]
                 break
 
         self.phase = new_phase
@@ -493,11 +493,11 @@ class InitialPhase(Phase):
               system_id is not None):
             self.parser.compatibility_mode = "limited quirks"
 
-        self.parser.phase = self.parser.phases["beforeHtml"]
+        self.parser.phase = self.parser.phases["before html"]
 
     def anything_else(self):
         self.parser.compatibility_mode = "quirks"
-        self.parser.phase = self.parser.phases["beforeHtml"]
+        self.parser.phase = self.parser.phases["before html"]
 
     def process_characters(self, token):
         self.parser.parse_error("expected-doctype-but-got-chars")
@@ -527,7 +527,7 @@ class BeforeHtmlPhase(Phase):
 
     def _insert_html_element(self):
         self.tree.insert_root(implied_tag_token("html", "StartTag"))
-        self.parser.phase = self.parser.phases["beforeHead"]
+        self.parser.phase = self.parser.phases["before head"]
 
     def process_eof(self):
         self._insert_html_element()
@@ -573,12 +573,12 @@ class BeforeHeadPhase(Phase):
         return token
 
     def start_tag_html(self, token):
-        return self.parser.phases["inBody"].process_start_tag(token)
+        return self.parser.phases["in body"].process_start_tag(token)
 
     def start_tag_head(self, token):
         self.tree.insert_element(token)
         self.tree.head_element = self.tree.open_elements[-1]
-        self.parser.phase = self.parser.phases["inHead"]
+        self.parser.phase = self.parser.phases["in head"]
 
     def start_tag_other(self, token):
         self.start_tag_head(implied_tag_token("head", "StartTag"))
@@ -614,7 +614,7 @@ class InHeadPhase(Phase):
         return token
 
     def start_tag_html(self, token):
-        return self.parser.phases["inBody"].process_start_tag(token)
+        return self.parser.phases["in body"].process_start_tag(token)
 
     def start_tag_head(self, token):
         self.parser.parse_error("two-heads-are-not-better-than-one")
@@ -657,7 +657,7 @@ class InHeadPhase(Phase):
             self.parser.parse_rcdata_rawtext(token, "RAWTEXT")
         else:
             self.tree.insert_element(token)
-            self.parser.phase = self.parser.phases["inHeadNoscript"]
+            self.parser.phase = self.parser.phases["in head noscript"]
 
     def start_tag_script(self, token):
         self.tree.insert_element(token)
@@ -672,7 +672,7 @@ class InHeadPhase(Phase):
     def end_tag_head(self, token):
         node = self.parser.tree.open_elements.pop()
         assert node.name == "head", "Expected head got %s" % node.name
-        self.parser.phase = self.parser.phases["afterHead"]
+        self.parser.phase = self.parser.phases["after head"]
 
     def end_tag_html_body_br(self, token):
         self.anything_else()
@@ -711,7 +711,7 @@ class InHeadNoscriptPhase(Phase):
         return True
 
     def process_comment(self, token):
-        return self.parser.phases["inHead"].process_comment(token)
+        return self.parser.phases["in head"].process_comment(token)
 
     def process_characters(self, token):
         self.parser.parse_error("char-in-head-noscript")
@@ -719,13 +719,13 @@ class InHeadNoscriptPhase(Phase):
         return token
 
     def process_space_characters(self, token):
-        return self.parser.phases["inHead"].process_space_characters(token)
+        return self.parser.phases["in head"].process_space_characters(token)
 
     def start_tag_html(self, token):
-        return self.parser.phases["inBody"].process_start_tag(token)
+        return self.parser.phases["in body"].process_start_tag(token)
 
     def start_tag_base_link_command(self, token):
-        return self.parser.phases["inHead"].process_start_tag(token)
+        return self.parser.phases["in head"].process_start_tag(token)
 
     def start_tag_head_noscript(self, token):
         self.parser.parse_error("unexpected-start-tag", {"name": token["name"]})
@@ -739,7 +739,7 @@ class InHeadNoscriptPhase(Phase):
     def end_tag_noscript(self, token):
         node = self.parser.tree.open_elements.pop()
         assert node.name == "noscript", f"Expected noscript got {node.name}"
-        self.parser.phase = self.parser.phases["inHead"]
+        self.parser.phase = self.parser.phases["in head"]
 
     def end_tag_br(self, token):
         self.parser.parse_error(
@@ -779,22 +779,22 @@ class AfterHeadPhase(Phase):
         return token
 
     def start_tag_html(self, token):
-        return self.parser.phases["inBody"].process_start_tag(token)
+        return self.parser.phases["in body"].process_start_tag(token)
 
     def start_tag_body(self, token):
         self.parser.frameset_ok = False
         self.tree.insert_element(token)
-        self.parser.phase = self.parser.phases["inBody"]
+        self.parser.phase = self.parser.phases["in body"]
 
     def start_tag_frameset(self, token):
         self.tree.insert_element(token)
-        self.parser.phase = self.parser.phases["inFrameset"]
+        self.parser.phase = self.parser.phases["in frameset"]
 
     def start_tag_from_head(self, token):
         self.parser.parse_error(
             "unexpected-start-tag-out-of-my-head", {"name": token["name"]})
         self.tree.open_elements.append(self.tree.head_element)
-        self.parser.phases["inHead"].process_start_tag(token)
+        self.parser.phases["in head"].process_start_tag(token)
         for node in self.tree.open_elements[::-1]:
             if node.name == "head":
                 self.tree.open_elements.remove(node)
@@ -816,7 +816,7 @@ class AfterHeadPhase(Phase):
 
     def anything_else(self):
         self.tree.insert_element(implied_tag_token("body", "StartTag"))
-        self.parser.phase = self.parser.phases["inBody"]
+        self.parser.phase = self.parser.phases["in body"]
         self.parser.frameset_ok = True
 
     start_tag_handler = dispatch([
@@ -905,7 +905,7 @@ class InBodyPhase(Phase):
         self.tree.insert_text(token["data"])
 
     def start_tag_process_in_head(self, token):
-        return self.parser.phases["inHead"].process_start_tag(token)
+        return self.parser.phases["in head"].process_start_tag(token)
 
     def start_tag_body(self, token):
         self.parser.parse_error("unexpected-start-tag", {"name": "body"})
@@ -932,7 +932,7 @@ class InBodyPhase(Phase):
             while self.tree.open_elements[-1].name != "html":
                 self.tree.open_elements.pop()
             self.tree.insert_element(token)
-            self.parser.phase = self.parser.phases["inFrameset"]
+            self.parser.phase = self.parser.phases["in frameset"]
 
     def start_tag_close_p(self, token):
         if self.tree.element_in_scope("p", variant="button"):
@@ -1048,7 +1048,7 @@ class InBodyPhase(Phase):
                 self.process_end_tag(implied_tag_token("p"))
         self.tree.insert_element(token)
         self.parser.frameset_ok = False
-        self.parser.phase = self.parser.phases["inTable"]
+        self.parser.phase = self.parser.phases["in table"]
 
     def start_tag_void_formatting(self, token):
         self.tree.reconstruct_active_formatting_elements()
@@ -1147,15 +1147,15 @@ class InBodyPhase(Phase):
         self.tree.insert_element(token)
         self.parser.frameset_ok = False
         if self.parser.phase in (
-                self.parser.phases["inTable"],
-                self.parser.phases["inCaption"],
-                self.parser.phases["inColumnGroup"],
-                self.parser.phases["inTableBody"],
-                self.parser.phases["inRow"],
-                self.parser.phases["inCell"]):
-            self.parser.phase = self.parser.phases["inSelectInTable"]
+                self.parser.phases["in table"],
+                self.parser.phases["in caption"],
+                self.parser.phases["in column group"],
+                self.parser.phases["in table body"],
+                self.parser.phases["in row"],
+                self.parser.phases["in cell"]):
+            self.parser.phase = self.parser.phases["in select in table"]
         else:
-            self.parser.phase = self.parser.phases["inSelect"]
+            self.parser.phase = self.parser.phases["in select"]
 
     def start_tag_rp_rt(self, token):
         if self.tree.element_in_scope("ruby"):
@@ -1229,7 +1229,7 @@ class InBodyPhase(Phase):
                         "expected-one-end-tag-but-got-another",
                         {"gotName": "body", "expectedName": node.name})
                     break
-        self.parser.phase = self.parser.phases["afterBody"]
+        self.parser.phase = self.parser.phases["after body"]
 
     def end_tag_html(self, token):
         # We repeat the test for the body end tag token being ignored here.
@@ -1608,13 +1608,13 @@ class InTablePhase(Phase):
 
     def process_space_characters(self, token):
         original_phase = self.parser.phase
-        self.parser.phase = self.parser.phases["inTableText"]
+        self.parser.phase = self.parser.phases["in table text"]
         self.parser.phase.original_phase = original_phase
         self.parser.phase.process_space_characters(token)
 
     def process_characters(self, token):
         original_phase = self.parser.phase
-        self.parser.phase = self.parser.phases["inTableText"]
+        self.parser.phase = self.parser.phases["in table text"]
         self.parser.phase.original_phase = original_phase
         self.parser.phase.process_characters(token)
 
@@ -1622,19 +1622,19 @@ class InTablePhase(Phase):
         # If we get here there must be at least one non-whitespace character.
         # Do the table magic!
         self.tree.insert_from_table = True
-        self.parser.phases["inBody"].process_characters(token)
+        self.parser.phases["in body"].process_characters(token)
         self.tree.insert_from_table = False
 
     def start_tag_caption(self, token):
         self._clear_stack_to_table_context()
         self.tree.active_formatting_elements.append(Marker)
         self.tree.insert_element(token)
-        self.parser.phase = self.parser.phases["inCaption"]
+        self.parser.phase = self.parser.phases["in caption"]
 
     def start_tag_colgroup(self, token):
         self._clear_stack_to_table_context()
         self.tree.insert_element(token)
-        self.parser.phase = self.parser.phases["inColumnGroup"]
+        self.parser.phase = self.parser.phases["in column group"]
 
     def start_tag_col(self, token):
         self.start_tag_colgroup(implied_tag_token("colgroup", "StartTag"))
@@ -1643,7 +1643,7 @@ class InTablePhase(Phase):
     def start_tag_rowgroup(self, token):
         self._clear_stack_to_table_context()
         self.tree.insert_element(token)
-        self.parser.phase = self.parser.phases["inTableBody"]
+        self.parser.phase = self.parser.phases["in table body"]
 
     def start_tag_imply_tbody(self, token):
         self.start_tag_rowgroup(implied_tag_token("tbody", "StartTag"))
@@ -1658,7 +1658,7 @@ class InTablePhase(Phase):
             return token
 
     def start_tag_style_script(self, token):
-        return self.parser.phases["inHead"].process_start_tag(token)
+        return self.parser.phases["in head"].process_start_tag(token)
 
     def start_tag_input(self, token):
         if ("type" in token["data"] and
@@ -1682,7 +1682,7 @@ class InTablePhase(Phase):
             "unexpected-start-tag-implies-table-voodoo", {"name": token["name"]})
         # Do the table magic!
         self.tree.insert_from_table = True
-        self.parser.phases["inBody"].process_start_tag(token)
+        self.parser.phases["in body"].process_start_tag(token)
         self.tree.insert_from_table = False
 
     def end_tag_table(self, token):
@@ -1709,7 +1709,7 @@ class InTablePhase(Phase):
             "unexpected-end-tag-implies-table-voodoo", {"name": token["name"]})
         # Do the table magic!
         self.tree.insert_from_table = True
-        self.parser.phases["inBody"].process_end_tag(token)
+        self.parser.phases["in body"].process_end_tag(token)
         self.tree.insert_from_table = False
 
     start_tag_handler = dispatch([
@@ -1744,7 +1744,7 @@ class InTableTextPhase(Phase):
         data = "".join([item["data"] for item in self.character_tokens])
         if any(item not in space_characters for item in data):
             token = {"type": token_types["Characters"], "data": data}
-            self.parser.phases["inTable"].insert_text(token)
+            self.parser.phases["in table"].insert_text(token)
         elif data:
             self.tree.insert_text(data)
         self.character_tokens = []
@@ -1788,10 +1788,10 @@ class InCaptionPhase(Phase):
         return not self.tree.element_in_scope("caption", variant="table")
 
     def process_eof(self):
-        self.parser.phases["inBody"].process_eof()
+        self.parser.phases["in body"].process_eof()
 
     def process_characters(self, token):
-        return self.parser.phases["inBody"].process_characters(token)
+        return self.parser.phases["in body"].process_characters(token)
 
     def start_tag_table_element(self, token):
         self.parser.parse_error("unexpected-table-start-tag-in-caption")
@@ -1802,7 +1802,7 @@ class InCaptionPhase(Phase):
             return token
 
     def start_tag_other(self, token):
-        return self.parser.phases["inBody"].process_start_tag(token)
+        return self.parser.phases["in body"].process_start_tag(token)
 
     def end_tag_caption(self, token):
         if not self.ignore_end_tag_caption():
@@ -1816,7 +1816,7 @@ class InCaptionPhase(Phase):
                 self.tree.open_elements.pop()
             self.tree.open_elements.pop()
             self.tree.clear_active_formatting_elements()
-            self.parser.phase = self.parser.phases["inTable"]
+            self.parser.phase = self.parser.phases["in table"]
         else:
             # Fragment case.
             assert self.parser.container
@@ -1833,7 +1833,7 @@ class InCaptionPhase(Phase):
         self.parser.parse_error("unexpected-end-tag", {"name": token["name"]})
 
     def end_tag_other(self, token):
-        return self.parser.phases["inBody"].process_end_tag(token)
+        return self.parser.phases["in body"].process_end_tag(token)
 
     start_tag_handler = dispatch([
         ("html", Phase.start_tag_html),
@@ -1890,7 +1890,7 @@ class InColumnGroupPhase(Phase):
             self.parser.parse_error("unexpected-end-tag", {"name": token["name"]})
         else:
             self.tree.open_elements.pop()
-            self.parser.phase = self.parser.phases["inTable"]
+            self.parser.phase = self.parser.phases["in table"]
 
     def end_tag_col(self, token):
         self.parser.parse_error("no-end-tag", {"name": "col"})
@@ -1926,18 +1926,18 @@ class InTableBodyPhase(Phase):
             assert self.parser.container
 
     def process_eof(self):
-        self.parser.phases["inTable"].process_eof()
+        self.parser.phases["in table"].process_eof()
 
     def process_space_characters(self, token):
-        return self.parser.phases["inTable"].process_space_characters(token)
+        return self.parser.phases["in table"].process_space_characters(token)
 
     def process_characters(self, token):
-        return self.parser.phases["inTable"].process_characters(token)
+        return self.parser.phases["in table"].process_characters(token)
 
     def start_tag_tr(self, token):
         self._clear_stack_to_table_body_context()
         self.tree.insert_element(token)
-        self.parser.phase = self.parser.phases["inRow"]
+        self.parser.phase = self.parser.phases["in row"]
 
     def start_tag_table_cell(self, token):
         self.parser.parse_error(
@@ -1961,13 +1961,13 @@ class InTableBodyPhase(Phase):
                 "unexpected-start-tag-out-of-table", {"name": token["name"]})
 
     def start_tag_other(self, token):
-        return self.parser.phases["inTable"].process_start_tag(token)
+        return self.parser.phases["in table"].process_start_tag(token)
 
     def end_tag_table_rowgroup(self, token):
         if self.tree.element_in_scope(token["name"], variant="table"):
             self._clear_stack_to_table_body_context()
             self.tree.open_elements.pop()
-            self.parser.phase = self.parser.phases["inTable"]
+            self.parser.phase = self.parser.phases["in table"]
         else:
             self.parser.parse_error(
                 "unexpected-end-tag-in-table-body", {"name": token["name"]})
@@ -1990,7 +1990,7 @@ class InTableBodyPhase(Phase):
             "unexpected-end-tag-in-table-body", {"name": token["name"]})
 
     def end_tag_other(self, token):
-        return self.parser.phases["inTable"].process_end_tag(token)
+        return self.parser.phases["in table"].process_end_tag(token)
 
     start_tag_handler = dispatch([
         ("html", Phase.start_tag_html),
@@ -2023,18 +2023,18 @@ class InRowPhase(Phase):
         return not self.tree.element_in_scope("tr", variant="table")
 
     def process_eof(self):
-        self.parser.phases["inTable"].process_eof()
+        self.parser.phases["in table"].process_eof()
 
     def process_space_characters(self, token):
-        return self.parser.phases["inTable"].process_space_characters(token)
+        return self.parser.phases["in table"].process_space_characters(token)
 
     def process_characters(self, token):
-        return self.parser.phases["inTable"].process_characters(token)
+        return self.parser.phases["in table"].process_characters(token)
 
     def start_tag_table_cell(self, token):
         self._clear_stack_to_table_row_context()
         self.tree.insert_element(token)
-        self.parser.phase = self.parser.phases["inCell"]
+        self.parser.phase = self.parser.phases["in cell"]
         self.tree.active_formatting_elements.append(Marker)
 
     def start_tag_table_other(self, token):
@@ -2045,13 +2045,13 @@ class InRowPhase(Phase):
             return token
 
     def start_tag_other(self, token):
-        return self.parser.phases["inTable"].process_start_tag(token)
+        return self.parser.phases["in table"].process_start_tag(token)
 
     def end_tag_tr(self, token):
         if not self.ignore_end_tag_tr():
             self._clear_stack_to_table_row_context()
             self.tree.open_elements.pop()
-            self.parser.phase = self.parser.phases["inTableBody"]
+            self.parser.phase = self.parser.phases["in table body"]
         else:
             # Fragment case.
             assert self.parser.container
@@ -2077,7 +2077,7 @@ class InRowPhase(Phase):
             "unexpected-end-tag-in-table-row", {"name": token["name"]})
 
     def end_tag_other(self, token):
-        return self.parser.phases["inTable"].process_end_tag(token)
+        return self.parser.phases["in table"].process_end_tag(token)
 
     start_tag_handler = dispatch([
         ("html", Phase.start_tag_html),
@@ -2105,10 +2105,10 @@ class InCellPhase(Phase):
             self.end_tag_table_cell(implied_tag_token("th"))
 
     def process_eof(self):
-        self.parser.phases["inBody"].process_eof()
+        self.parser.phases["in body"].process_eof()
 
     def process_characters(self, token):
-        return self.parser.phases["inBody"].process_characters(token)
+        return self.parser.phases["in body"].process_characters(token)
 
     def start_tag_table_other(self, token):
         if (self.tree.element_in_scope("td", variant="table") or
@@ -2122,7 +2122,7 @@ class InCellPhase(Phase):
                 "unexpected-start-tag-out-of-table-cell", {"name": token["name"]})
 
     def start_tag_other(self, token):
-        return self.parser.phases["inBody"].process_start_tag(token)
+        return self.parser.phases["in body"].process_start_tag(token)
 
     def end_tag_table_cell(self, token):
         if self.tree.element_in_scope(token["name"], variant="table"):
@@ -2137,7 +2137,7 @@ class InCellPhase(Phase):
             else:
                 self.tree.open_elements.pop()
             self.tree.clear_active_formatting_elements()
-            self.parser.phase = self.parser.phases["inRow"]
+            self.parser.phase = self.parser.phases["in row"]
         else:
             self.parser.parse_error("unexpected-end-tag", {"name": token["name"]})
 
@@ -2153,7 +2153,7 @@ class InCellPhase(Phase):
             self.parser.parse_error("unexpected-end-tag", {"name": token["name"]})
 
     def end_tag_other(self, token):
-        return self.parser.phases["inBody"].process_end_tag(token)
+        return self.parser.phases["in body"].process_end_tag(token)
 
     start_tag_handler = dispatch([
         ("html", Phase.start_tag_html),
@@ -2209,7 +2209,7 @@ class InSelectPhase(Phase):
             assert self.parser.container
 
     def start_tag_script(self, token):
-        return self.parser.phases["inHead"].process_start_tag(token)
+        return self.parser.phases["in head"].process_start_tag(token)
 
     def start_tag_other(self, token):
         self.parser.parse_error(
@@ -2268,10 +2268,10 @@ class InSelectInTablePhase(Phase):
     __slots__ = tuple()
 
     def process_eof(self):
-        self.parser.phases["inSelect"].process_eof()
+        self.parser.phases["in select"].process_eof()
 
     def process_characters(self, token):
-        return self.parser.phases["inSelect"].process_characters(token)
+        return self.parser.phases["in select"].process_characters(token)
 
     def start_tag_table(self, token):
         self.parser.parse_error(
@@ -2281,7 +2281,7 @@ class InSelectInTablePhase(Phase):
         return token
 
     def start_tag_other(self, token):
-        return self.parser.phases["inSelect"].process_start_tag(token)
+        return self.parser.phases["in select"].process_start_tag(token)
 
     def end_tag_table(self, token):
         self.parser.parse_error(
@@ -2292,7 +2292,7 @@ class InSelectInTablePhase(Phase):
             return token
 
     def end_tag_other(self, token):
-        return self.parser.phases["inSelect"].process_end_tag(token)
+        return self.parser.phases["in select"].process_end_tag(token)
 
     start_tag_handler = dispatch([
         (("caption", "table", "tbody", "tfoot", "thead", "tr", "td", "th"),
@@ -2404,7 +2404,7 @@ class InForeignContentPhase(Phase):
         while True:
             if node.name.translate(ascii_upper_to_lower) == token["name"]:
                 # XXX this isn't in the spec but it seems necessary
-                if self.parser.phase == self.parser.phases["inTableText"]:
+                if self.parser.phase == self.parser.phases["in table text"]:
                     self.parser.phase.flush_characters()
                     self.parser.phase = self.parser.phase.original_phase
                 while self.tree.open_elements.pop() != node:
@@ -2436,28 +2436,28 @@ class AfterBodyPhase(Phase):
 
     def process_characters(self, token):
         self.parser.parse_error("unexpected-char-after-body")
-        self.parser.phase = self.parser.phases["inBody"]
+        self.parser.phase = self.parser.phases["in body"]
         return token
 
     def start_tag_html(self, token):
-        return self.parser.phases["inBody"].process_start_tag(token)
+        return self.parser.phases["in body"].process_start_tag(token)
 
     def start_tag_other(self, token):
         self.parser.parse_error(
             "unexpected-start-tag-after-body", {"name": token["name"]})
-        self.parser.phase = self.parser.phases["inBody"]
+        self.parser.phase = self.parser.phases["in body"]
         return token
 
     def end_tag_html(self, name):
         if self.parser.container:
             self.parser.parse_error("unexpected-end-tag-after-body-innerhtml")
         else:
-            self.parser.phase = self.parser.phases["afterAfterBody"]
+            self.parser.phase = self.parser.phases["after after body"]
 
     def end_tag_other(self, token):
         self.parser.parse_error(
             "unexpected-end-tag-after-body", {"name": token["name"]})
-        self.parser.phase = self.parser.phases["inBody"]
+        self.parser.phase = self.parser.phases["in body"]
         return token
 
     start_tag_handler = dispatch([
@@ -2488,7 +2488,7 @@ class InFramesetPhase(Phase):
         self.tree.open_elements.pop()
 
     def start_tag_noframes(self, token):
-        return self.parser.phases["inBody"].process_start_tag(token)
+        return self.parser.phases["in body"].process_start_tag(token)
 
     def start_tag_other(self, token):
         self.parser.parse_error(
@@ -2504,7 +2504,7 @@ class InFramesetPhase(Phase):
                 self.tree.open_elements[-1].name != "frameset"):
             # If we're not in fragment mode and the current node is not a
             # "frameset" element (anymore) then switch.
-            self.parser.phase = self.parser.phases["afterFrameset"]
+            self.parser.phase = self.parser.phases["after frameset"]
 
     def end_tag_other(self, token):
         self.parser.parse_error(
@@ -2534,14 +2534,14 @@ class AfterFramesetPhase(Phase):
         self.parser.parse_error("unexpected-char-after-frameset")
 
     def start_tag_noframes(self, token):
-        return self.parser.phases["inHead"].process_start_tag(token)
+        return self.parser.phases["in head"].process_start_tag(token)
 
     def start_tag_other(self, token):
         self.parser.parse_error(
             "unexpected-start-tag-after-frameset", {"name": token["name"]})
 
     def end_tag_html(self, token):
-        self.parser.phase = self.parser.phases["afterAfterFrameset"]
+        self.parser.phase = self.parser.phases["after after frameset"]
 
     def end_tag_other(self, token):
         self.parser.parse_error(
@@ -2567,26 +2567,26 @@ class AfterAfterBodyPhase(Phase):
         self.tree.insert_comment(token, self.tree.document)
 
     def process_space_characters(self, token):
-        return self.parser.phases["inBody"].process_space_characters(token)
+        return self.parser.phases["in body"].process_space_characters(token)
 
     def process_characters(self, token):
         self.parser.parse_error("expected-eof-but-got-char")
-        self.parser.phase = self.parser.phases["inBody"]
+        self.parser.phase = self.parser.phases["in body"]
         return token
 
     def start_tag_html(self, token):
-        return self.parser.phases["inBody"].process_start_tag(token)
+        return self.parser.phases["in body"].process_start_tag(token)
 
     def start_tag_other(self, token):
         self.parser.parse_error(
             "expected-eof-but-got-start-tag", {"name": token["name"]})
-        self.parser.phase = self.parser.phases["inBody"]
+        self.parser.phase = self.parser.phases["in body"]
         return token
 
     def process_end_tag(self, token):
         self.parser.parse_error(
             "expected-eof-but-got-end-tag", {"name": token["name"]})
-        self.parser.phase = self.parser.phases["inBody"]
+        self.parser.phase = self.parser.phases["in body"]
         return token
 
     start_tag_handler = dispatch([
@@ -2604,16 +2604,16 @@ class AfterAfterFramesetPhase(Phase):
         self.tree.insert_comment(token, self.tree.document)
 
     def process_space_characters(self, token):
-        return self.parser.phases["inBody"].process_space_characters(token)
+        return self.parser.phases["in body"].process_space_characters(token)
 
     def process_characters(self, token):
         self.parser.parse_error("expected-eof-but-got-char")
 
     def start_tag_html(self, token):
-        return self.parser.phases["inBody"].process_start_tag(token)
+        return self.parser.phases["in body"].process_start_tag(token)
 
     def start_tag_noframes(self, token):
-        return self.parser.phases["inHead"].process_start_tag(token)
+        return self.parser.phases["in head"].process_start_tag(token)
 
     def start_tag_other(self, token):
         self.parser.parse_error(
@@ -2631,28 +2631,28 @@ class AfterAfterFramesetPhase(Phase):
 
 _phases = {
     "initial": InitialPhase,
-    "beforeHtml": BeforeHtmlPhase,
-    "beforeHead": BeforeHeadPhase,
-    "inHead": InHeadPhase,
-    "inHeadNoscript": InHeadNoscriptPhase,
-    "afterHead": AfterHeadPhase,
-    "inBody": InBodyPhase,
+    "before html": BeforeHtmlPhase,
+    "before head": BeforeHeadPhase,
+    "in head": InHeadPhase,
+    "in head noscript": InHeadNoscriptPhase,
+    "after head": AfterHeadPhase,
+    "in body": InBodyPhase,
     "text": TextPhase,
-    "inTable": InTablePhase,
-    "inTableText": InTableTextPhase,
-    "inCaption": InCaptionPhase,
-    "inColumnGroup": InColumnGroupPhase,
-    "inTableBody": InTableBodyPhase,
-    "inRow": InRowPhase,
-    "inCell": InCellPhase,
-    "inSelect": InSelectPhase,
-    "inSelectInTable": InSelectInTablePhase,
-    "inForeignContent": InForeignContentPhase,
-    "afterBody": AfterBodyPhase,
-    "inFrameset": InFramesetPhase,
-    "afterFrameset": AfterFramesetPhase,
-    "afterAfterBody": AfterAfterBodyPhase,
-    "afterAfterFrameset": AfterAfterFramesetPhase,
+    "in table": InTablePhase,
+    "in table text": InTableTextPhase,
+    "in caption": InCaptionPhase,
+    "in column group": InColumnGroupPhase,
+    "in table body": InTableBodyPhase,
+    "in row": InRowPhase,
+    "in cell": InCellPhase,
+    "in select": InSelectPhase,
+    "in select in table": InSelectInTablePhase,
+    "in foreign content": InForeignContentPhase,
+    "after body": AfterBodyPhase,
+    "in frameset": InFramesetPhase,
+    "after frameset": AfterFramesetPhase,
+    "after after body": AfterAfterBodyPhase,
+    "after after frameset": AfterAfterFramesetPhase,
 }
 
 
