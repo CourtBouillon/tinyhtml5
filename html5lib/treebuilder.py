@@ -43,48 +43,20 @@ class ActiveFormattingElements(list):
 
 class Element:
     def __init__(self, name, namespace=None):
-        self._name = name
-        self._namespace = namespace
+        self.name = name
+        self.namespace = namespace
         self._element = ElementTree.Element(self._get_etree_tag(name, namespace))
         if namespace is None:
-            self.name_tuple = _html, self._name
+            self.name_tuple = _html, self.name
         else:
-            self.name_tuple = self._namespace, self._name
+            self.name_tuple = self.namespace, self.name
         self._children = []
-        self._flags = []
 
         # The parent of the current node (or None for the document node).
         self.parent = None
 
-    def __str__(self):
-        attributes = " ".join(
-            f'{name}="{value}"' for name, value in self.attributes.items())
-        return f"<{self.name} {attributes}>" if attributes else f"{self.name}"
-
-    def __repr__(self):
-        return f"<{self.name}>"
-
     def _get_etree_tag(self, name, namespace):
         return name if namespace is None else f"{{{namespace}}}{name}"
-
-    def _set_name(self, name):
-        self._name = name
-        self._element.tag = self._get_etree_tag(self._name, self._namespace)
-
-    def _get_name(self):
-        return self._name
-
-    # The tag name associated with the node.
-    name = property(_get_name, _set_name)
-
-    def _set_namespace(self, namespace):
-        self._namespace = namespace
-        self._element.tag = self._get_etree_tag(self._name, self._namespace)
-
-    def _get_namespace(self):
-        return self._namespace
-
-    namespace = property(_get_namespace, _set_namespace)
 
     def _get_attributes(self):
         return self._element.attrib
@@ -99,7 +71,7 @@ class Element:
                 name = f"{{{key[2]}}}{key[1]}" if isinstance(key, tuple) else key
                 element_attributes[name] = value
 
-    # A dict holding name -> value pairs for attributes of the node
+    # A dict holding name -> value pairs for attributes of the node.
     attributes = property(_get_attributes, _set_attributes)
 
     def _get_children(self):
@@ -210,41 +182,16 @@ class Comment(Element):
         self._element = ElementTree.Comment(data)
         self.parent = None
         self._children = []
-        self._flags = []
-
-    def _get_data(self):
-        return self._element.text
-
-    def _set_data(self, value):
-        self._element.text = value
-
-    data = property(_get_data, _set_data)
 
 
 class DocumentType(Element):
     def __init__(self, name, public_id, system_id):
         Element.__init__(self, "<!DOCTYPE>")
         self._element.text = name
+        self._element.set("publicId", public_id)
+        self._element.set("systemId", system_id)
         self.public_id = public_id
         self.system_id = system_id
-
-    def _get_public_id(self):
-        return self._element.get("publicId", "")
-
-    def _set_public_id(self, value):
-        if value is not None:
-            self._element.set("publicId", value)
-
-    public_id = property(_get_public_id, _set_public_id)
-
-    def _get_system_id(self):
-        return self._element.get("systemId", "")
-
-    def _set_system_id(self, value):
-        if value is not None:
-            self._element.set("systemId", value)
-
-    system_id = property(_get_system_id, _set_system_id)
 
 
 class Document(Element):

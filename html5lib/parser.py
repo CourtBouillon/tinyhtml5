@@ -255,9 +255,6 @@ class HTMLParser:
     def adjust_foreign_attributes(self, token):
         adjust_attributes(token, adjust_foreign_attributes)
 
-    def reparse_token_normal(self, token):
-        self.parser.phase()
-
     def reset_insertion_mode(self):
         # The name of this method is mostly historical. (It's also used in the
         # specification.)

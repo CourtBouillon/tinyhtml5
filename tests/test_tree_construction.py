@@ -129,7 +129,7 @@ def test_tree_construction(id, test, namespace):
         output = output.replace(f"{{{prefix}}}", "" if value == "html" else f"{value} ")
 
     if id in _xfails:
-        if expected == output:
+        if expected == output:  # pragma: no cover
             warn(f"{id}{'-ns' if namespace else ''} passes but is marked as xfail")
         else:
             pytest.xfail()

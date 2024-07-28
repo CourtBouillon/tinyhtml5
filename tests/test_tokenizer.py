@@ -160,5 +160,5 @@ def test_tokenizer(id, test):
         else:
             assert match, error_message
     else:
-        if id in _xfails:
+        if id in _xfails:  # pragma: no cover
             warn(f"{id} passes but is marked as xfail")
