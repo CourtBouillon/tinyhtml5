@@ -6,14 +6,13 @@ modern desktop web browsers.
 
 Example usage::
 
-    import html5lib
-    with open("my_document.html", "rb") as f:
-        tree = html5lib.parse(f)
+    import tinyhtml5
+    tree = tinyhtml5.parse("/path/to/document.html")
 
 """
 
-from .parser import HTMLParser, parse
+from .parser import parse
 
-__all__ = ["HTMLParser", "parse"]
+__all__ = ["parse"]
 
-VERSION = __version__ = "1.2-dev"
+VERSION = __version__ = "2.0.0-b0"

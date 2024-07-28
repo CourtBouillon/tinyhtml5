@@ -1,10 +1,22 @@
-Change Log
-----------
+Changelog
+=========
+
+tinyhtml5 changelog
+-------------------
+
+2.0.0b1
+~~~~~~~
+
+* TODO.
+
+
+html5lib changelog
+------------------
 
 1.2
 ~~~
 
-Unreleased yet
+Unreleased.
 
 Features:
 

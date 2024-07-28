@@ -36,7 +36,9 @@ characters_until_regex = {}
 
 
 def HTMLInputStream(source, **kwargs):  # noqa: N802
-    if isinstance(source, Path):
+    if isinstance(source, str) and len(source) < 200 and Path(source).is_file():
+        return HTMLUnicodeInputStream(Path(source).read_text(), **kwargs)
+    elif isinstance(source, Path):
         return HTMLUnicodeInputStream(source.read_text(), **kwargs)
     elif isinstance(source.read(0) if hasattr(source, "read") else source, str):
         return HTMLUnicodeInputStream(source, **kwargs)
@@ -55,7 +57,7 @@ class HTMLUnicodeInputStream:
     def __init__(self, source):
         """Initialise the HTMLInputStream.
 
-        Create a normalized stream from source for use by html5lib.
+        Create a normalized stream from source for use by tinyhtml5.
 
         source can be either a file-object, local filename or a string.
 
@@ -309,7 +311,7 @@ class HTMLBinaryInputStream(HTMLUnicodeInputStream):
         if encoding[0] is not None:
             return encoding
 
-        # Fallback to html5lib's default if even that hasn't worked.
+        # Fallback to tinyhtml5's default if even that hasn't worked.
         return lookup_encoding("windows-1252"), "tentative"
 
     def change_encoding(self, new_encoding):

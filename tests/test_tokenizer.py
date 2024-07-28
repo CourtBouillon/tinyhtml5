@@ -5,8 +5,8 @@ from warnings import warn
 
 import pytest
 
-from html5lib import constants
-from html5lib.tokenizer import HTMLTokenizer
+from tinyhtml5 import constants
+from tinyhtml5.tokenizer import HTMLTokenizer
 
 
 class TokenizerTestParser:

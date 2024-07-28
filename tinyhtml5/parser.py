@@ -22,17 +22,35 @@ from .treebuilder import Marker, TreeBuilder
 def parse(document, namespace_html_elements=True, **kwargs):
     """Parse an HTML document into a tree.
 
-    :arg document: the document to parse as a string, Path or file-like object.
+    :param document:
+        The document to parse as a HTML string, filename, file-like object.
+    :type document:
+        :class:`str`, :class:`bytes`, :class:`pathlib.Path` or
+        :term:`file object`
+    :param bool namespace_html_elements:
+        Whether or not to namespace HTML elements.
 
-    :arg namespace_html_elements: whether or not to namespace HTML elements.
+    Extra parameters can be provided to define possible encodings if the
+    document is given as :class:`bytes`.
 
-    :returns: parsed tree.
+    :param override_encoding: Forced encoding provided by user agent.
+    :type override_encoding: str or bytes
+    :param transport_encoding: Encoding provided by transport layout.
+    :type transport_encoding: str or bytes
+    :param same_origin_parent_encoding: Parent document encoding.
+    :type same_origin_parent_encoding: str or bytes
+    :param likely_encoding: Possible encoding provided by user agent.
+    :type likely_encoding: str or bytes
+    :param default_encoding: Encoding used as fallback.
+    :type default_encoding: str or bytes
+
+    :returns: :class:`xml.etree.ElementTree.Element`.
 
     Example:
 
-    >>> from html5lib import parse
+    >>> from tinyhtml5 import parse
     >>> parse('<html><body><p>This is a doc</p></body></html>')
-    <Element u'{http://www.w3.org/1999/xhtml}html' at 0x7feac4909db0>
+    <Element '{http://www.w3.org/1999/xhtml}html' at …>
 
     """
     return HTMLParser(namespace_html_elements).parse(document, **kwargs)
@@ -46,11 +64,6 @@ class HTMLParser:
     """
 
     def __init__(self, namespace_html_elements=True):
-        """Create HTML parser.
-
-        :arg namespace_html_elements: whether or not to namespace HTML elements.
-
-        """
         self.tree = TreeBuilder(namespace_html_elements)
         self.errors = []
         self.phases = {name: cls(self, self.tree) for name, cls in _phases.items()}
@@ -192,23 +205,7 @@ class HTMLParser:
     def parse(self, stream, full_tree=False, **kwargs):
         """Parse a HTML document into a well-formed tree.
 
-        :arg stream: file-like object or string containing HTML to be parsed.
-
-            The optional encoding parameter must be a string that indicates
-            the encoding. If specified, that encoding will be used,
-            regardless of any BOM or later declaration (such as in a meta
-            element).
-
-        :arg full_tree: return the whole tree instead of the root html tag.
-
-        :returns: parsed tree.
-
-        Example:
-
-        >>> from html5lib.html5parser import HTMLParser
-        >>> parser = HTMLParser()
-        >>> parser.parse('<html><body><p>This is a doc</p></body></html>')
-        <Element u'{http://www.w3.org/1999/xhtml}html' at 0x7feac4909db0>
+        If ``full_tree`` is ``True``, return the whole tree.
 
         """
         self._parse(stream, **kwargs)
@@ -217,23 +214,7 @@ class HTMLParser:
     def parse_fragment(self, stream, container="div", **kwargs):
         """Parse a HTML fragment into a well-formed tree fragment.
 
-        :arg stream: file-like object or string containing HTML to be parsed.
-
-            The optional encoding parameter must be a string that indicates
-            the encoding. If specified, that encoding will be used,
-            regardless of any BOM or later declaration (such as in a meta
-            element).
-
-        :arg container: tag name of the fragment’s container.
-
-        :returns: parsed fragment.
-
-        Example:
-
-        >>> from html5lib.html5libparser import HTMLParser
-        >>> parser = HTMLParser()
-        >>> parser.parse_fragment('<b>this is a fragment</b>')
-        <Element u'DOCUMENT_FRAGMENT' at 0x7feac484b090>
+        ``container`` is the tag name of the fragment’s container.
 
         """
         self._parse(stream, container=container, **kwargs)

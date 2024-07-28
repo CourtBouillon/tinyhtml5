@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from html5lib.inputstream import HTMLBinaryInputStream
-from html5lib.parser import HTMLParser
+from tinyhtml5.inputstream import HTMLBinaryInputStream
+from tinyhtml5.parser import HTMLParser
 
 from . import Data
 

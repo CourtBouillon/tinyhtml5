@@ -4,7 +4,8 @@ from xml.etree import ElementTree
 
 import pytest
 
-from html5lib import HTMLParser, constants
+from tinyhtml5 import constants
+from tinyhtml5.parser import HTMLParser
 
 from . import Data
 
