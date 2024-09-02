@@ -61,18 +61,3 @@ maintainers, we didn’t want to give false hopes to its users. Maintaining and
 extending all these features, with a very large community with a lot of
 different needs, is a work we can’t do seriously with the limited resources we
 have.
-
-
-Why Python?
------------
-
-Python is a really good language to design a small, OS-agnostic library. As it
-is object-oriented, it gives the possibility to follow the PDF specification
-with high-level classes and a small amount of very simple code.
-
-And of course, WeasyPrint is written in Python too, giving an obvious reason
-for this choice.
-
-Speed is not pydyf’s main goal. Code simplicity, maintainability and
-flexibility are more important goals for this library, as they give the ability
-to stay really close to the specification and to fix bugs easily.
