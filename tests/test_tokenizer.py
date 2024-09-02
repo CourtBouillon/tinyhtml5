@@ -22,7 +22,8 @@ class TokenizerTestParser:
         if self._last_start_tag is not None:
             tokenizer.current_token = {"type": "startTag", "name": self._last_start_tag}
 
-        types = {value: key.lower() for key, value in constants.token_types.items()}
+        types = {
+            value: key.lower() for key, value in constants.Token.__members__.items()}
         for token in tokenizer:
             getattr(self, f"process_{types[token['type']]}")(token)
 
@@ -33,25 +34,25 @@ class TokenizerTestParser:
             "DOCTYPE", token["name"], token["publicId"],
             token["systemId"], token["correct"]])
 
-    def process_starttag(self, token):
+    def process_start_tag(self, token):
         self.output_tokens.append([
             "StartTag", token["name"], token["data"], token["selfClosing"]])
 
-    def process_emptytag(self, token):
+    def process_empty_tag(self, token):
         if token["name"] not in constants.void_elements:
             self.output_tokens.append("ParseError")
         self.output_tokens.append(
             ["StartTag", token["name"], dict(token["data"][::-1])])
 
-    def process_endtag(self, token):
+    def process_end_tag(self, token):
         self.output_tokens.append(["EndTag", token["name"], token["selfClosing"]])
 
     def process_comment(self, token):
         self.output_tokens.append(["Comment", token["data"]])
 
-    def process_spacecharacters(self, token):
+    def process_space_characters(self, token):
         self.output_tokens.append(["Character", token["data"]])
-        self.process_spacecharacters = self.process_characters
+        self.process_space_characters = self.process_characters
 
     def process_characters(self, token):
         self.output_tokens.append(["Character", token["data"]])
@@ -59,7 +60,7 @@ class TokenizerTestParser:
     def process_eof(self, token):
         pass
 
-    def process_parseerror(self, token):
+    def process_parse_error(self, token):
         self.output_tokens.append(["ParseError", token["data"]])
 
 

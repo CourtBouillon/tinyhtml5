@@ -1,6 +1,7 @@
 from . import inputstream
 from .constants import (
     ReparseError,
+    Token,
     adjust_foreign_attributes,
     adjust_mathml_attributes,
     adjust_svg_attributes,
@@ -13,7 +14,6 @@ from .constants import (
     rcdata_elements,
     space_characters,
     special_elements,
-    token_types,
 )
 from .tokenizer import HTMLTokenizer
 from .treebuilder import Marker, TreeBuilder
@@ -132,14 +132,6 @@ class HTMLParser:
         return full_name in mathml_text_integration_point_elements
 
     def main_loop(self):
-        characters_token = token_types["Characters"]
-        space_characters_token = token_types["SpaceCharacters"]
-        start_tag_token = token_types["StartTag"]
-        end_tag_token = token_types["EndTag"]
-        comment_token = token_types["Comment"]
-        doctype_token = token_types["Doctype"]
-        parse_error_token = token_types["ParseError"]
-
         for token in self.tokenizer:
             previous_token = None
             new_token = token
@@ -153,41 +145,41 @@ class HTMLParser:
 
                 type = new_token["type"]
 
-                if type == parse_error_token:
+                if type == Token.PARSE_ERROR:
                     self.parse_error(new_token["data"], new_token.get("datavars", {}))
                     new_token = None
                 else:
                     if (len(self.tree.open_elements) == 0 or
                         current_node_namespace == self.tree.default_namespace or
                         (self.is_mathml_text_integration_point(current_node) and
-                         ((type == start_tag_token and
+                         ((type == Token.START_TAG and
                            token["name"] not in frozenset(["mglyph", "malignmark"])) or
-                          type in (characters_token, space_characters_token))) or
+                          type in (Token.CHARACTERS, Token.SPACE_CHARACTERS))) or
                         (current_node_namespace == namespaces["mathml"] and
                          current_node_name == "annotation-xml" and
-                         type == start_tag_token and
+                         type == Token.START_TAG and
                          token["name"] == "svg") or
                         (self.is_html_integration_point(current_node) and type in (
-                            start_tag_token, characters_token,
-                            space_characters_token))):
+                            Token.START_TAG, Token.CHARACTERS,
+                            Token.SPACE_CHARACTERS))):
                         phase = self.phase
                     else:
                         phase = self.phases["in foreign content"]
 
-                    if type == characters_token:
+                    if type == Token.CHARACTERS:
                         new_token = phase.process_characters(new_token)
-                    elif type == space_characters_token:
+                    elif type == Token.SPACE_CHARACTERS:
                         new_token = phase.process_space_characters(new_token)
-                    elif type == start_tag_token:
+                    elif type == Token.START_TAG:
                         new_token = phase.process_start_tag(new_token)
-                    elif type == end_tag_token:
+                    elif type == Token.END_TAG:
                         new_token = phase.process_end_tag(new_token)
-                    elif type == comment_token:
+                    elif type == Token.COMMENT:
                         new_token = phase.process_comment(new_token)
-                    elif type == doctype_token:
+                    elif type == Token.DOCTYPE:
                         new_token = phase.process_doctype(new_token)
 
-            if (type == start_tag_token and previous_token["selfClosing"] and
+            if (type == Token.START_TAG and previous_token["selfClosing"] and
                     not previous_token["selfClosingAcknowledged"]):
                 self.parse_error(
                     "non-void-element-with-trailing-solidus",
@@ -507,7 +499,7 @@ class BeforeHtmlPhase(Phase):
     __slots__ = tuple()
 
     def _insert_html_element(self):
-        self.tree.insert_root(implied_tag_token("html", "StartTag"))
+        self.tree.insert_root(implied_tag_token("html", "START_TAG"))
         self.parser.phase = self.parser.phases["before head"]
 
     def process_eof(self):
@@ -543,14 +535,14 @@ class BeforeHeadPhase(Phase):
     __slots__ = tuple()
 
     def process_eof(self):
-        self.start_tag_head(implied_tag_token("head", "StartTag"))
+        self.start_tag_head(implied_tag_token("head", "START_TAG"))
         return True
 
     def process_space_characters(self, token):
         pass
 
     def process_characters(self, token):
-        self.start_tag_head(implied_tag_token("head", "StartTag"))
+        self.start_tag_head(implied_tag_token("head", "START_TAG"))
         return token
 
     def start_tag_html(self, token):
@@ -562,11 +554,11 @@ class BeforeHeadPhase(Phase):
         self.parser.phase = self.parser.phases["in head"]
 
     def start_tag_other(self, token):
-        self.start_tag_head(implied_tag_token("head", "StartTag"))
+        self.start_tag_head(implied_tag_token("head", "START_TAG"))
         return token
 
     def end_tag_imply_head(self, token):
-        self.start_tag_head(implied_tag_token("head", "StartTag"))
+        self.start_tag_head(implied_tag_token("head", "START_TAG"))
         return token
 
     def end_tag_other(self, token):
@@ -796,7 +788,7 @@ class AfterHeadPhase(Phase):
         self.parser.parse_error("unexpected-end-tag", {"name": token["name"]})
 
     def anything_else(self):
-        self.tree.insert_element(implied_tag_token("body", "StartTag"))
+        self.tree.insert_element(implied_tag_token("body", "START_TAG"))
         self.parser.phase = self.parser.phases["in body"]
         self.parser.frameset_ok = True
 
@@ -944,14 +936,14 @@ class InBodyPhase(Phase):
         for node in reversed(self.tree.open_elements):
             if node.name in stop_names:
                 self.parser.phase.process_end_tag(
-                    implied_tag_token(node.name, "EndTag"))
+                    implied_tag_token(node.name))
                 break
             if (node.name_tuple in special_elements and
                     node.name not in ("address", "div", "p")):
                 break
 
         if self.tree.element_in_scope("p", variant="button"):
-            self.parser.phase.process_end_tag(implied_tag_token("p", "EndTag"))
+            self.parser.phase.process_end_tag(implied_tag_token("p"))
 
         self.tree.insert_element(token)
 
@@ -1065,7 +1057,7 @@ class InBodyPhase(Phase):
             "unexpected-start-tag-treated-as",
             {"originalName": "image", "newName": "img"})
         self.process_start_tag(implied_tag_token(
-            "img", "StartTag", attributes=token["data"],
+            "img", "START_TAG", attributes=token["data"],
             self_closing=token["selfClosing"]))
 
     def start_tag_isindex(self, token):
@@ -1076,15 +1068,15 @@ class InBodyPhase(Phase):
         if "action" in token["data"]:
             form_attrs["action"] = token["data"]["action"]
         self.process_start_tag(
-            implied_tag_token("form", "StartTag", attributes=form_attrs))
-        self.process_start_tag(implied_tag_token("hr", "StartTag"))
-        self.process_start_tag(implied_tag_token("label", "StartTag"))
+            implied_tag_token("form", "START_TAG", attributes=form_attrs))
+        self.process_start_tag(implied_tag_token("hr", "START_TAG"))
+        self.process_start_tag(implied_tag_token("label", "START_TAG"))
         # XXX Localization ...
         if "prompt" in token["data"]:
             prompt = token["data"]["prompt"]
         else:
             prompt = "This is a searchable index. Enter search keywords: "
-        self.process_characters({"type": token_types["Characters"], "data": prompt})
+        self.process_characters({"type": Token.CHARACTERS, "data": prompt})
         attributes = token["data"].copy()
         if "action" in attributes:
             del attributes["action"]
@@ -1092,10 +1084,10 @@ class InBodyPhase(Phase):
             del attributes["prompt"]
         attributes["name"] = "isindex"
         self.process_start_tag(implied_tag_token(
-            "input", "StartTag", attributes=attributes,
+            "input", "START_TAG", attributes=attributes,
             self_closing=token["selfClosing"]))
         self.process_end_tag(implied_tag_token("label"))
-        self.process_start_tag(implied_tag_token("hr", "StartTag"))
+        self.process_start_tag(implied_tag_token("hr", "START_TAG"))
         self.process_end_tag(implied_tag_token("form"))
 
     def start_tag_textarea(self, token):
@@ -1185,9 +1177,9 @@ class InBodyPhase(Phase):
 
     def end_tag_p(self, token):
         if not self.tree.element_in_scope("p", variant="button"):
-            self.start_tag_close_p(implied_tag_token("p", "StartTag"))
+            self.start_tag_close_p(implied_tag_token("p", "START_TAG"))
             self.parser.parse_error("unexpected-end-tag", {"name": "p"})
-            self.end_tag_p(implied_tag_token("p", "EndTag"))
+            self.end_tag_p(implied_tag_token("p"))
         else:
             self.tree.generate_implied_end_tags("p")
             if self.tree.open_elements[-1].name != "p":
@@ -1456,7 +1448,7 @@ class InBodyPhase(Phase):
             "unexpected-end-tag-treated-as",
             {"originalName": "br", "newName": "br element"})
         self.tree.reconstruct_active_formatting_elements()
-        self.tree.insert_element(implied_tag_token("br", "StartTag"))
+        self.tree.insert_element(implied_tag_token("br", "START_TAG"))
         self.tree.open_elements.pop()
 
     def end_tag_other(self, token):
@@ -1618,7 +1610,7 @@ class InTablePhase(Phase):
         self.parser.phase = self.parser.phases["in column group"]
 
     def start_tag_col(self, token):
-        self.start_tag_colgroup(implied_tag_token("colgroup", "StartTag"))
+        self.start_tag_colgroup(implied_tag_token("colgroup", "START_TAG"))
         return token
 
     def start_tag_rowgroup(self, token):
@@ -1627,7 +1619,7 @@ class InTablePhase(Phase):
         self.parser.phase = self.parser.phases["in table body"]
 
     def start_tag_imply_tbody(self, token):
-        self.start_tag_rowgroup(implied_tag_token("tbody", "StartTag"))
+        self.start_tag_rowgroup(implied_tag_token("tbody", "START_TAG"))
         return token
 
     def start_tag_table(self, token):
@@ -1724,7 +1716,7 @@ class InTableTextPhase(Phase):
     def flush_characters(self):
         data = "".join([item["data"] for item in self.character_tokens])
         if any(item not in space_characters for item in data):
-            token = {"type": token_types["Characters"], "data": data}
+            token = {"type": Token.CHARACTERS, "data": data}
             self.parser.phases["in table"].insert_text(token)
         elif data:
             self.tree.insert_text(data)
@@ -1923,7 +1915,7 @@ class InTableBodyPhase(Phase):
     def start_tag_table_cell(self, token):
         self.parser.parse_error(
             "unexpected-cell-in-table-body", {"name": token["name"]})
-        self.start_tag_tr(implied_tag_token("tr", "StartTag"))
+        self.start_tag_tr(implied_tag_token("tr", "START_TAG"))
         return token
 
     def start_tag_table_other(self, token):
@@ -2643,9 +2635,9 @@ def adjust_attributes(token, replacements):
             (replacements.get(key, key), value) for key, value in token['data'].items())
 
 
-def implied_tag_token(name, type="EndTag", attributes=None, self_closing=False):
+def implied_tag_token(name, type="END_TAG", attributes=None, self_closing=False):
     return {
-        "type": token_types[type],
+        "type": Token[type],
         "name": name,
         "data": {} if attributes is None else attributes,
         "selfClosing": self_closing,

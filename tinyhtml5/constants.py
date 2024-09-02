@@ -1,4 +1,5 @@
 import string
+from enum import Enum
 
 EOF = None
 
@@ -29,23 +30,6 @@ scoping_elements = frozenset([
     (namespaces["svg"], "foreignObject"),
     (namespaces["svg"], "desc"),
     (namespaces["svg"], "title"),
-])
-
-formatting_elements = frozenset([
-    (namespaces["html"], "a"),
-    (namespaces["html"], "b"),
-    (namespaces["html"], "big"),
-    (namespaces["html"], "code"),
-    (namespaces["html"], "em"),
-    (namespaces["html"], "font"),
-    (namespaces["html"], "i"),
-    (namespaces["html"], "nobr"),
-    (namespaces["html"], "s"),
-    (namespaces["html"], "small"),
-    (namespaces["html"], "strike"),
-    (namespaces["html"], "strong"),
-    (namespaces["html"], "tt"),
-    (namespaces["html"], "u")
 ])
 
 special_elements = frozenset([
@@ -228,10 +212,6 @@ adjust_foreign_attributes = {
     "xmlns:xlink": ("xmlns", "xlink", namespaces["xmlns"])
 }
 
-unadjust_foreign_attributes = {
-    (ns, local): qname for qname, (prefix, local, ns) in
-    adjust_foreign_attributes.items()}
-
 space_characters = frozenset([
     "\t",
     "\n",
@@ -309,30 +289,6 @@ rcdata_elements = frozenset([
     'noscript'
 ])
 
-boolean_attributes = {
-    "": frozenset(["irrelevant", "itemscope"]),
-    "style": frozenset(["scoped"]),
-    "img": frozenset(["ismap"]),
-    "audio": frozenset(["autoplay", "controls"]),
-    "video": frozenset(["autoplay", "controls"]),
-    "script": frozenset(["defer", "async"]),
-    "details": frozenset(["open"]),
-    "datagrid": frozenset(["multiple", "disabled"]),
-    "command": frozenset(["hidden", "disabled", "checked", "default"]),
-    "hr": frozenset(["noshade"]),
-    "menu": frozenset(["autosubmit"]),
-    "fieldset": frozenset(["disabled", "readonly"]),
-    "option": frozenset(["disabled", "readonly", "selected"]),
-    "optgroup": frozenset(["disabled", "readonly"]),
-    "button": frozenset(["disabled", "autofocus"]),
-    "input": frozenset(
-        ["disabled", "readonly", "required", "autofocus", "checked", "ismap"]),
-    "select": frozenset(["disabled", "readonly", "autofocus", "multiple"]),
-    "ol": frozenset(["reversed"]),
-    "output": frozenset(["disabled", "readonly"]),
-    "iframe": frozenset(["seamless"]),
-}
-
 replacement_characters = {
     0x0: "\uFFFD",
     0x0d: "\u000D",
@@ -370,19 +326,17 @@ replacement_characters = {
     0x9F: "\u0178",
 }
 
-token_types = {
-    "Doctype": 0,
-    "Characters": 1,
-    "SpaceCharacters": 2,
-    "StartTag": 3,
-    "EndTag": 4,
-    "EmptyTag": 5,
-    "Comment": 6,
-    "ParseError": 7
-}
+class Token(Enum):
+    DOCTYPE = 0
+    CHARACTERS = 1
+    SPACE_CHARACTERS = 2
+    START_TAG = 3
+    END_TAG = 4
+    EMPTY_TAG = 5
+    COMMENT = 6
+    PARSE_ERROR = 7
 
-tag_token_types = frozenset(
-    [token_types["StartTag"], token_types["EndTag"], token_types["EmptyTag"]])
+tag_token_types = frozenset([Token.START_TAG, Token.END_TAG, Token.EMPTY_TAG])
 
 prefixes = {url: name for name, url in namespaces.items()}
 prefixes["http://www.w3.org/1998/Math/MathML"] = "math"

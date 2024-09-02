@@ -4,6 +4,7 @@ from html.entities import html5 as entities
 
 from .constants import (
     EOF,
+    Token,
     ascii_letters,
     ascii_upper_to_lower,
     digits,
@@ -11,7 +12,6 @@ from .constants import (
     replacement_characters,
     space_characters,
     tag_token_types,
-    token_types,
 )
 from .inputstream import HTMLInputStream
 
@@ -60,7 +60,7 @@ class HTMLTokenizer:
         while self.state():
             while self.stream.errors:
                 yield {
-                    "type": token_types["ParseError"],
+                    "type": Token.PARSE_ERROR,
                     "data": self.stream.errors.pop(0),
                 }
             while self.token_queue:
@@ -68,14 +68,14 @@ class HTMLTokenizer:
 
     def parse_error(self, _data, **datavars):
         """Add a parse error to the token queue."""
-        token = {"type": token_types["ParseError"], "data": _data}
+        token = {"type": Token.PARSE_ERROR, "data": _data}
         if datavars:
             token["datavars"] = datavars
         self.token_queue.append(token)
 
     def characters(self, _data):
         """Add a characters string to the token queue."""
-        self.token_queue.append({"type": token_types["Characters"], "data": _data})
+        self.token_queue.append({"type": Token.CHARACTERS, "data": _data})
 
     def consume_number_entity(self, is_hex):
         """Return either U+FFFD or the character based on the representation.
@@ -198,8 +198,8 @@ class HTMLTokenizer:
         if from_attribute:
             self.current_token["data"][-1][1] += output
         else:
-            type = "SpaceCharacters" if output in space_characters else "Characters"
-            self.token_queue.append({"type": token_types[type], "data": output})
+            type = "SPACE_CHARACTERS" if output in space_characters else "CHARACTERS"
+            self.token_queue.append({"type": Token[type], "data": output})
 
     def process_entity_in_attribute(self, allowed):
         """Replace the need for entity_in_attribute_value_state."""
@@ -216,7 +216,7 @@ class HTMLTokenizer:
         # Add token to the queue to be yielded.
         if token["type"] in tag_token_types:
             token["name"] = token["name"].translate(ascii_upper_to_lower)
-            if token["type"] == token_types["StartTag"]:
+            if token["type"] == Token.START_TAG:
                 raw = token["data"]
                 data = dict(raw)
                 if len(raw) > len(data):
@@ -224,7 +224,7 @@ class HTMLTokenizer:
                     data.update(raw[::-1])
                 token["data"] = data
 
-            if token["type"] == token_types["EndTag"]:
+            if token["type"] == Token.END_TAG:
                 if token["data"]:
                     self.parse_error("attributes-in-end-tag")
                 if token["selfClosing"]:
@@ -249,7 +249,7 @@ class HTMLTokenizer:
             # state". At that point space characters are important so they are
             # emitted separately.
             self.token_queue.append({
-                "type": token_types["SpaceCharacters"],
+                "type": Token.SPACE_CHARACTERS,
                 "data": data + self.stream.chars_until(space_characters, True),
             })
             # No need to update lastFourChars here, since the first space will
@@ -282,7 +282,7 @@ class HTMLTokenizer:
             # state". At that point space_characters are important so they are
             # emitted separately.
             self.token_queue.append({
-                "type": token_types["SpaceCharacters"],
+                "type": Token.SPACE_CHARACTERS,
                 "data": data + self.stream.chars_until(space_characters, True),
             })
             # No need to update lastFourChars here, since the first space will
@@ -345,7 +345,7 @@ class HTMLTokenizer:
             self.state = self.close_tag_open_state
         elif data in ascii_letters:
             self.current_token = {
-                "type": token_types["StartTag"],
+                "type": Token.START_TAG,
                 "name": data,
                 "data": [],
                 "selfClosing": False,
@@ -376,7 +376,7 @@ class HTMLTokenizer:
         data = self.stream.character()
         if data in ascii_letters:
             self.current_token = {
-                "type": token_types["EndTag"],
+                "type": Token.END_TAG,
                 "name": data,
                 "data": [],
                 "selfClosing": False,
@@ -445,7 +445,7 @@ class HTMLTokenizer:
         data = self.stream.character()
         if data in space_characters and appropriate:
             self.current_token = {
-                "type": token_types["EndTag"],
+                "type": Token.END_TAG,
                 "name": self.temporary_buffer,
                 "data": [],
                 "selfClosing": False,
@@ -453,7 +453,7 @@ class HTMLTokenizer:
             self.state = self.before_attribute_name_state
         elif data == "/" and appropriate:
             self.current_token = {
-                "type": token_types["EndTag"],
+                "type": Token.END_TAG,
                 "name": self.temporary_buffer,
                 "data": [],
                 "selfClosing": False,
@@ -461,7 +461,7 @@ class HTMLTokenizer:
             self.state = self.self_closing_start_tag_state
         elif data == ">" and appropriate:
             self.current_token = {
-                "type": token_types["EndTag"],
+                "type": Token.END_TAG,
                 "name": self.temporary_buffer,
                 "data": [],
                 "selfClosing": False,
@@ -505,7 +505,7 @@ class HTMLTokenizer:
         data = self.stream.character()
         if data in space_characters and appropriate:
             self.current_token = {
-                "type": token_types["EndTag"],
+                "type": Token.END_TAG,
                 "name": self.temporary_buffer,
                 "data": [],
                 "selfClosing": False,
@@ -513,7 +513,7 @@ class HTMLTokenizer:
             self.state = self.before_attribute_name_state
         elif data == "/" and appropriate:
             self.current_token = {
-                "type": token_types["EndTag"],
+                "type": Token.END_TAG,
                 "name": self.temporary_buffer,
                 "data": [],
                 "selfClosing": False,
@@ -521,7 +521,7 @@ class HTMLTokenizer:
             self.state = self.self_closing_start_tag_state
         elif data == ">" and appropriate:
             self.current_token = {
-                "type": token_types["EndTag"],
+                "type": Token.END_TAG,
                 "name": self.temporary_buffer,
                 "data": [],
                 "selfClosing": False,
@@ -568,7 +568,7 @@ class HTMLTokenizer:
         data = self.stream.character()
         if data in space_characters and appropriate:
             self.current_token = {
-                "type": token_types["EndTag"],
+                "type": Token.END_TAG,
                 "name": self.temporary_buffer,
                 "data": [],
                 "selfClosing": False,
@@ -576,7 +576,7 @@ class HTMLTokenizer:
             self.state = self.before_attribute_name_state
         elif data == "/" and appropriate:
             self.current_token = {
-                "type": token_types["EndTag"],
+                "type": Token.END_TAG,
                 "name": self.temporary_buffer,
                 "data": [],
                 "selfClosing": False,
@@ -584,7 +584,7 @@ class HTMLTokenizer:
             self.state = self.self_closing_start_tag_state
         elif data == ">" and appropriate:
             self.current_token = {
-                "type": token_types["EndTag"],
+                "type": Token.END_TAG,
                 "name": self.temporary_buffer,
                 "data": [],
                 "selfClosing": False,
@@ -706,7 +706,7 @@ class HTMLTokenizer:
         data = self.stream.character()
         if data in space_characters and appropriate:
             self.current_token = {
-                "type": token_types["EndTag"],
+                "type": Token.END_TAG,
                 "name": self.temporary_buffer,
                 "data": [],
                 "selfClosing": False,
@@ -714,7 +714,7 @@ class HTMLTokenizer:
             self.state = self.before_attribute_name_state
         elif data == "/" and appropriate:
             self.current_token = {
-                "type": token_types["EndTag"],
+                "type": Token.END_TAG,
                 "name": self.temporary_buffer,
                 "data": [],
                 "selfClosing": False,
@@ -722,7 +722,7 @@ class HTMLTokenizer:
             self.state = self.self_closing_start_tag_state
         elif data == ">" and appropriate:
             self.current_token = {
-                "type": token_types["EndTag"],
+                "type": Token.END_TAG,
                 "name": self.temporary_buffer,
                 "data": [],
                 "selfClosing": False,
@@ -1072,7 +1072,7 @@ class HTMLTokenizer:
         # and emit it.
         data = self.stream.chars_until(">")
         data = data.replace("\u0000", "\uFFFD")
-        self.token_queue.append({"type": token_types["Comment"], "data": data})
+        self.token_queue.append({"type": Token.COMMENT, "data": data})
 
         # Eat the character directly after the bogus comment which is either a
         # ">" or an EOF.
@@ -1085,7 +1085,7 @@ class HTMLTokenizer:
         if stack[-1] == "-":
             stack.append(self.stream.character())
             if stack[-1] == "-":
-                self.current_token = {"type": token_types["Comment"], "data": ""}
+                self.current_token = {"type": Token.COMMENT, "data": ""}
                 self.state = self.comment_start_state
                 return True
         elif stack[-1] and stack[-1] in 'dD':
@@ -1097,7 +1097,7 @@ class HTMLTokenizer:
                     break
             if matched:
                 self.current_token = {
-                    "type": token_types["Doctype"],
+                    "type": Token.DOCTYPE,
                     "name": "",
                     "publicId": None,
                     "systemId": None,
