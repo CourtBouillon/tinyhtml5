@@ -7,7 +7,22 @@ tinyhtml5 changelog
 2.0.0b1
 ~~~~~~~
 
-* TODO.
+Released on 2024-09-18.
+
+This is the first beta version of tinyhtml5, a simplified and modernized
+version of html5lib. Please read the :doc:`going_further` page to know more about
+this fork.
+
+Dependencies:
+
+* Python 3.9+ is now needed.
+* webencodings is the only required dependency.
+
+Features:
+
+* tinyhtml5 is only a HTML5 parser, that only generates an ElementTree tree.
+* Code internals are cleaned, simplified and modernized.
+* Tests are included.
 
 
 html5lib changelog
