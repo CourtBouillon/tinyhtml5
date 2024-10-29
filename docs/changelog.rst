@@ -4,6 +4,15 @@ Changelog
 tinyhtml5 changelog
 -------------------
 
+2.0.0
+~~~~~
+
+Released on 2024-10-29.
+
+Dependencies:
+
+* Support Python 3.13.
+
 2.0.0b1
 ~~~~~~~
 
