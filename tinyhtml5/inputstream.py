@@ -54,17 +54,12 @@ class HTMLUnicodeInputStream:
 
     """
 
-    def __init__(self, source):
+    def __init__(self, source, **kwargs):
         """Initialise the HTMLInputStream.
 
         Create a normalized stream from source for use by tinyhtml5.
 
         source can be either a file-object, local filename or a string.
-
-        The optional encoding parameter must be a string that indicates
-        the encoding.  If specified, that encoding will be used,
-        regardless of any BOM or later declaration (such as in a meta
-        element).
 
         """
         # List of where new lines occur.
@@ -239,7 +234,7 @@ class HTMLBinaryInputStream(HTMLUnicodeInputStream):
 
     def __init__(self, source, override_encoding=None, transport_encoding=None,
                  same_origin_parent_encoding=None, likely_encoding=None,
-                 default_encoding="windows-1252"):
+                 default_encoding="windows-1252", **kwargs):
         # Raw Stream - for Unicode objects this will encode to UTF-8 and set
         # self.encoding as appropriate.
         self.raw_stream = self.open_stream(source)
