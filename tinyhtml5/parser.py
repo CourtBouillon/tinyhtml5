@@ -295,7 +295,7 @@ def dispatch(items):
 
 class Phase:
     """Base class for helper that implements each phase of processing."""
-    __slots__ = ("parser", "tree", "__start_tag_cache", "__end_tag_cache")
+    __slots__ = ("__end_tag_cache", "__start_tag_cache", "parser", "tree")
 
     def __init__(self, parser, tree):
         self.parser = parser
@@ -377,7 +377,7 @@ class InitialPhase(Phase):
         correct = token["correct"]
 
         if (name != "html" or public_id is not None or
-                system_id is not None and system_id != "about:legacy-compat"):
+                (system_id is not None and system_id != "about:legacy-compat")):
             self.parser.parse_error("unknown-doctype")
 
         if public_id is None:
@@ -450,20 +450,20 @@ class InitialPhase(Phase):
                 public_id in ("-//w3o//dtd w3 html strict 3.0//en//",
                               "-/w3c/dtd html 4.0 transitional/en",
                               "html") or
-                public_id.startswith(
+                (public_id.startswith(
                     ("-//w3c//dtd html 4.01 frameset//",
                      "-//w3c//dtd html 4.01 transitional//")) and
-                system_id is None or
-                system_id and system_id.lower() ==
-                "http://www.ibm.com/data/dtd/v11/ibmxhtml1-transitional.dtd"):
+                system_id is None) or
+                (system_id and system_id.lower() ==
+                "http://www.ibm.com/data/dtd/v11/ibmxhtml1-transitional.dtd")):
             self.parser.compatibility_mode = "quirks"
         elif (public_id.startswith(
                 ("-//w3c//dtd xhtml 1.0 frameset//",
                  "-//w3c//dtd xhtml 1.0 transitional//")) or
-              public_id.startswith(
+              (public_id.startswith(
                   ("-//w3c//dtd html 4.01 frameset//",
                    "-//w3c//dtd html 4.01 transitional//")) and
-              system_id is not None):
+              system_id is not None)):
             self.parser.compatibility_mode = "limited quirks"
 
         self.parser.phase = self.parser.phases["before html"]
@@ -1706,7 +1706,7 @@ class InTablePhase(Phase):
 
 
 class InTableTextPhase(Phase):
-    __slots__ = ("original_phase", "character_tokens")
+    __slots__ = ("character_tokens", "original_phase")
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

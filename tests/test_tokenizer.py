@@ -85,8 +85,8 @@ def tokens_match(expected, received):
 
     """
     check_self_closing = any(
-        token[0] == "StartTag" and len(token) == 4 or
-        token[0] == "EndTag" and len(token) == 3
+        (token[0] == "StartTag" and len(token) == 4) or
+        (token[0] == "EndTag" and len(token) == 3)
         for token in expected)
     if not check_self_closing:
         for token in received:
