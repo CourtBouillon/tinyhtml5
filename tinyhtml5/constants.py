@@ -277,16 +277,16 @@ void_elements = frozenset([
 # ^3: param
 #     https://developer.mozilla.org/en-US/docs/Web/HTML/Element/param
 
-cdata_elements = frozenset(['title', 'textarea'])
+cdata_elements = frozenset(["title", "textarea"])
 
 rcdata_elements = frozenset([
-    'style',
-    'script',
-    'xmp',
-    'iframe',
-    'noembed',
-    'noframes',
-    'noscript'
+    "style",
+    "script",
+    "xmp",
+    "iframe",
+    "noembed",
+    "noframes",
+    "noscript"
 ])
 
 replacement_characters = {

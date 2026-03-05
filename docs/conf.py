@@ -5,20 +5,20 @@ import tinyhtml5
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom ones.
 extensions = [
-    'sphinx.ext.autodoc', 'sphinx.ext.intersphinx', 'sphinx.ext.autosectionlabel']
+    "sphinx.ext.autodoc", "sphinx.ext.intersphinx", "sphinx.ext.autosectionlabel"]
 
 # Add any paths that contain templates here, relative to this directory.
-templates_path = ['_templates']
+templates_path = ["_templates"]
 
 # The suffix of source filenames.
-source_suffix = '.rst'
+source_suffix = ".rst"
 
 # The master toctree document.
-master_doc = 'index'
+master_doc = "index"
 
 # General information about the project.
-project = 'tinyhtml5'
-copyright = 'James Graham, Sam Sneddon and contributors'
+project = "tinyhtml5"
+copyright = "James Graham, Sam Sneddon and contributors"
 
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the
@@ -28,25 +28,25 @@ copyright = 'James Graham, Sam Sneddon and contributors'
 release = tinyhtml5.__version__
 
 # The short X.Y version.
-version = '.'.join(release.split('.')[:2])
+version = ".".join(release.split(".")[:2])
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
-exclude_patterns = ['_build']
+exclude_patterns = ["_build"]
 
 # The name of the Pygments (syntax highlighting) style to use.
-pygments_style = 'monokai'
+pygments_style = "monokai"
 
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
-html_theme = 'sphinx_rtd_theme'
+html_theme = "sphinx_rtd_theme"
 
 html_theme_options = {
-    'collapse_navigation': False,
+    "collapse_navigation": False,
 }
 
 # Favicon URL
-html_favicon = 'https://www.courtbouillon.org/static/images/favicon.png'
+html_favicon = "https://www.courtbouillon.org/static/images/favicon.png"
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
@@ -56,30 +56,30 @@ html_static_path = []
 # These paths are either relative to html_static_path
 # or fully qualified paths (eg. https://...)
 html_css_files = [
-    'https://www.courtbouillon.org/static/docs.css',
+    "https://www.courtbouillon.org/static/docs.css",
 ]
 
 # Output file base name for HTML help builder.
-htmlhelp_basename = 'tinyhtml5doc'
+htmlhelp_basename = "tinyhtml5doc"
 
 # One entry per manual page. List of tuples
 # (source start file, name, description, authors, manual section).
 man_pages = [
-    ('index', 'tinyhtml5', 'tinyhtml5 Documentation',
-     ['James Graham, Sam Sneddon and contributors'], 1)
+    ("index", "tinyhtml5", "tinyhtml5 Documentation",
+     ["James Graham, Sam Sneddon and contributors"], 1)
 ]
 
 # Grouping the document tree into Texinfo files. List of tuples
 # (source start file, target name, title, author,
 #  dir menu entry, description, category)
 texinfo_documents = [
-  ('index', 'tinyhtml5', 'tinyhtml5 Documentation',
-   'James Graham, Sam Sneddon and contributors', 'tinyhtml5',
-   'A tiny HTML5 parser', 'Miscellaneous'),
+  ("index", "tinyhtml5", "tinyhtml5 Documentation",
+   "James Graham, Sam Sneddon and contributors", "tinyhtml5",
+   "A tiny HTML5 parser", "Miscellaneous"),
 ]
 
 # Example configuration for intersphinx: refer to the Python standard library.
 intersphinx_mapping = {
-    'python': ('https://docs.python.org/3', None),
-    'webencodings': ('https://pythonhosted.org/webencodings', None),
+    "python": ("https://docs.python.org/3", None),
+    "webencodings": ("https://pythonhosted.org/webencodings", None),
 }

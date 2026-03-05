@@ -118,8 +118,8 @@ if os.name == "nt":
         "plain-text-unsafe-0",
     )
 
-@pytest.mark.parametrize("namespace", (False, True), ids=("nons", "ns"))
-@pytest.mark.parametrize("id, test", _tests, ids=(id for id, _ in _tests))
+@pytest.mark.parametrize("namespace", [False, True], ids=("nons", "ns"))
+@pytest.mark.parametrize(("id", "test"), _tests, ids=(id for id, _ in _tests))
 def test_tree_construction(id, test, namespace):
     # TODO: Check error messages.
     parser = HTMLParser(namespace_html_elements=namespace)

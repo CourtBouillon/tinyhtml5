@@ -250,7 +250,7 @@ class TreeBuilder:
                 return False
 
         # We should never reach this point.
-        assert False  # pragma: no cover
+        raise ValueError  # pragma: no cover
 
     def reconstruct_active_formatting_elements(self):
         # Within this algorithm the order of steps described in the

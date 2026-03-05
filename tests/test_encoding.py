@@ -13,7 +13,7 @@ _tests = tuple(
     for i, test in enumerate(Data(path, b"data", encoding=None)))
 
 
-@pytest.mark.parametrize("id, test", _tests, ids=(id for id, _ in _tests))
+@pytest.mark.parametrize(("id", "test"), _tests, ids=(id for id, _ in _tests))
 def test_parser_encoding(id, test):
     parser = HTMLParser()
     assert parser.encoding is None
@@ -26,7 +26,7 @@ def test_parser_encoding(id, test):
     assert encoding == parser.encoding, error_message
 
 
-@pytest.mark.parametrize("id, test", _tests, ids=(id for id, _ in _tests))
+@pytest.mark.parametrize(("id", "test"), _tests, ids=(id for id, _ in _tests))
 def test_prescan_encoding(id, test):
     stream = HTMLBinaryInputStream(test[b"data"])
 

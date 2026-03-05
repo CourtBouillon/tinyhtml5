@@ -58,5 +58,5 @@ exclude_lines = ['pragma: no cover', 'def __repr__', 'raise NotImplementedError'
 omit = ['.*']
 
 [tool.ruff.lint]
-select = ['E', 'W', 'F', 'I', 'N', 'RUF']
+select = ['E', 'W', 'F', 'I', 'N', 'RUF', 'T20', 'PIE', 'PT', 'RSE', 'UP', 'Q']
 ignore = ['RUF001', 'RUF002', 'RUF003']

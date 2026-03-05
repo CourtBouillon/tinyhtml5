@@ -90,7 +90,7 @@ class HTMLParser:
                 self.tokenizer.state = self.tokenizer.rcdata_state
             elif self.container in rcdata_elements:
                 self.tokenizer.state = self.tokenizer.rawtext_state
-            elif self.container == 'plaintext':
+            elif self.container == "plaintext":
                 self.tokenizer.state = self.tokenizer.plaintext_state
             else:
                 # State already is data state.
@@ -115,7 +115,7 @@ class HTMLParser:
         :obj:`None` if that is not determined yet.
 
         """
-        if hasattr(self, 'tokenizer'):
+        if hasattr(self, "tokenizer"):
             return self.tokenizer.stream.encoding[0].name
 
     def is_html_integration_point(self, element):
@@ -644,7 +644,7 @@ class InHeadPhase(Phase):
 
     def end_tag_head(self, token):
         node = self.parser.tree.open_elements.pop()
-        assert node.name == "head", "Expected head got %s" % node.name
+        assert node.name == "head", f"Expected head got {node.name}"
         self.parser.phase = self.parser.phases["after head"]
 
     def end_tag_html_body_br(self, token):
@@ -1542,7 +1542,7 @@ class TextPhase(Phase):
         return True
 
     def start_tag_other(self, token):
-        assert False, (  # pragma: no cover
+        raise ValueError(  # pragma: no cover
             f"Tried to process start tag {token['name']} in RCDATA/RAWTEXT mode")
 
     def end_tag_script(self, token):
@@ -2630,9 +2630,9 @@ _phases = {
 
 
 def adjust_attributes(token, replacements):
-    if token['data'].keys() & replacements.keys():
-        token['data'] = type(token['data'])(
-            (replacements.get(key, key), value) for key, value in token['data'].items())
+    if token["data"].keys() & replacements.keys():
+        token["data"] = type(token["data"])(
+            (replacements.get(key, key), value) for key, value in token["data"].items())
 
 
 def implied_tag_token(name, type="END_TAG", attributes=None, self_closing=False):

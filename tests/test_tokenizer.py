@@ -136,7 +136,7 @@ _xfails = (
 )
 
 
-@pytest.mark.parametrize("id, test", _tests, ids=(id for id, _ in _tests))
+@pytest.mark.parametrize(("id", "test"), _tests, ids=(id for id, _ in _tests))
 def test_tokenizer(id, test):
     if "initialStates" not in test:
         test["initialStates"] = ["Data state"]

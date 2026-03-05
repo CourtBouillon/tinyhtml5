@@ -54,7 +54,7 @@ class HTMLTokenizer:
         is requested.
 
         """
-        self.token_queue = deque([])
+        self.token_queue = deque()
         # Start processing. When EOF is reached self.state will return False
         # instead of True and the loop will terminate.
         while self.state():
@@ -949,7 +949,7 @@ class HTMLTokenizer:
         data = self.stream.character()
         if data in space_characters:
             self.stream.chars_until(space_characters, True)
-        elif data == "\"":
+        elif data == '"':
             self.state = self.attribute_value_double_quoted_state
         elif data == "&":
             self.state = self.attribute_value_unquoted_state
@@ -977,7 +977,7 @@ class HTMLTokenizer:
 
     def attribute_value_double_quoted_state(self):
         data = self.stream.character()
-        if data == "\"":
+        if data == '"':
             self.state = self.after_attribute_value_state
         elif data == "&":
             self.process_entity_in_attribute('"')
@@ -989,7 +989,7 @@ class HTMLTokenizer:
             self.state = self.data_state
         else:
             self.current_token["data"][-1][1] += (
-                data + self.stream.chars_until(("\"", "&", "\u0000")))
+                data + self.stream.chars_until(('"', "&", "\u0000")))
         return True
 
     def attribute_value_single_quoted_state(self):
@@ -1088,9 +1088,9 @@ class HTMLTokenizer:
                 self.current_token = {"type": Token.COMMENT, "data": ""}
                 self.state = self.comment_start_state
                 return True
-        elif stack[-1] and stack[-1] in 'dD':
+        elif stack[-1] and stack[-1] in "dD":
             matched = True
-            for expected in ('oO', 'cC', 'tT', 'yY', 'pP', 'eE'):
+            for expected in ("oO", "cC", "tT", "yY", "pP", "eE"):
                 stack.append(self.stream.character())
                 if not stack[-1] or stack[-1] not in expected:
                     matched = False
@@ -1378,7 +1378,7 @@ class HTMLTokenizer:
         data = self.stream.character()
         if data in space_characters:
             pass
-        elif data == "\"":
+        elif data == '"':
             self.current_token["publicId"] = ""
             self.state = self.doctype_public_identifier_double_quoted_state
         elif data == "'":
@@ -1538,7 +1538,7 @@ class HTMLTokenizer:
 
     def doctype_system_identifier_double_quoted_state(self):
         data = self.stream.character()
-        if data == "\"":
+        if data == '"':
             self.state = self.after_doctype_system_identifier_state
         elif data == "\u0000":
             self.parse_error("invalid-codepoint")
