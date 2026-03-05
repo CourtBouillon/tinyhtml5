@@ -4,6 +4,20 @@ Changelog
 tinyhtml5 changelog
 -------------------
 
+2.1.0
+~~~~~
+
+Released on 2026-03-05.
+
+Dependencies:
+
+* Support Python 3.14.
+* Drop support of Python 3.9.
+
+Features:
+
+* Allow useless parameters for all HTML input streams.
+
 2.0.0
 ~~~~~
 
