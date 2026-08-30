@@ -44,7 +44,7 @@ html_theme = "furo"
 html_theme_options = {
     "top_of_page_buttons": ["edit"],
     "source_edit_link":
-    "https://github.com/CoutBouillon/tinyhtml5/edit/main/docs/{filename}",
+    "https://github.com/CourtBouillon/tinyhtml5/edit/main/docs/{filename}",
 }
 
 # Favicon URL
