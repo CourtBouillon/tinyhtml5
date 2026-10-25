@@ -7,7 +7,7 @@ This module is a simplified fork of html5lib, written and maintained by James
 Graham, Sam Sneddon, Łukasz Langa and Will Kahn-Greene.
 
 * Free software: MIT license
-* For Python 3.10+, tested on CPython and PyPy
+* For Python 3.11+, tested on CPython and PyPy
 * Documentation: https://doc.courtbouillon.org/tinyhtml5
 * Changelog: https://github.com/CourtBouillon/tinyhtml5/releases
 * Code, issues, tests: https://github.com/CourtBouillon/tinyhtml5
